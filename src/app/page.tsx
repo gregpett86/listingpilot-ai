@@ -1,6 +1,7 @@
 "use client";
 
 import { ChangeEvent, useMemo, useState } from "react";
+import { jsPDF } from "jspdf";
 
 type PropertyArea =
   | "Kitchen"
@@ -255,6 +256,123 @@ function buildReport(findings: AreaFinding[], photos: PhotoItem[]): Optimization
       "Pair the final report with CMA pricing guidance and launch timeline.",
     ],
   };
+}
+
+function addWrappedText(
+  doc: jsPDF,
+  text: string,
+  x: number,
+  y: number,
+  maxWidth: number,
+  lineHeight: number,
+) {
+  const lines = doc.splitTextToSize(text, maxWidth) as string[];
+  doc.text(lines, x, y);
+  return y + lines.length * lineHeight;
+}
+
+function ensurePdfSpace(doc: jsPDF, y: number, neededSpace = 28) {
+  if (y + neededSpace < 280) {
+    return y;
+  }
+
+  doc.addPage();
+  return 20;
+}
+
+function exportReportPdf(report: OptimizationReport) {
+  const doc = new jsPDF({ unit: "mm", format: "letter" });
+  const margin = 18;
+  const contentWidth = 180;
+  let y = 20;
+
+  const addSectionTitle = (title: string) => {
+    y = ensurePdfSpace(doc, y, 18);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(13);
+    doc.setTextColor(15, 23, 42);
+    doc.text(title, margin, y);
+    y += 7;
+  };
+
+  const addParagraph = (text: string) => {
+    y = ensurePdfSpace(doc, y, 20);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.setTextColor(71, 85, 105);
+    y = addWrappedText(doc, text, margin, y, contentWidth, 5) + 3;
+  };
+
+  const addBulletList = (items: string[]) => {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.setTextColor(71, 85, 105);
+
+    items.forEach((item) => {
+      y = ensurePdfSpace(doc, y, 14);
+      const lines = doc.splitTextToSize(item, contentWidth - 6) as string[];
+      doc.text("-", margin, y);
+      doc.text(lines, margin + 5, y);
+      y += lines.length * 5 + 2;
+    });
+    y += 2;
+  };
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(20);
+  doc.setTextColor(15, 23, 42);
+  doc.text("ListingPilot AI", margin, y);
+  y += 9;
+  doc.setFontSize(16);
+  doc.text("Home Sale Optimization Report", margin, y);
+  y += 10;
+  doc.setDrawColor(13, 148, 136);
+  doc.line(margin, y, margin + contentWidth, y);
+  y += 10;
+
+  addSectionTitle("Property Summary");
+  addParagraph(report.propertySummary);
+
+  addSectionTitle("Current Market Value");
+  addParagraph(report.marketValue);
+
+  addSectionTitle("AI Findings");
+  report.findings.forEach((finding) => {
+    y = ensurePdfSpace(doc, y, 30);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.setTextColor(15, 23, 42);
+    doc.text(`${finding.area} (${finding.confidence} confidence)`, margin, y);
+    y += 6;
+    addParagraph(finding.condition);
+    addBulletList(finding.sellerTalkingPoints);
+  });
+
+  addSectionTitle("Recommended Improvements");
+  report.improvements.forEach((improvement) => {
+    y = ensurePdfSpace(doc, y, 24);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.setTextColor(15, 23, 42);
+    doc.text(`${improvement.area} - ${improvement.priority} Priority`, margin, y);
+    y += 6;
+    addParagraph(improvement.recommendation);
+    addParagraph(
+      `Estimated Cost Range: ${improvement.estimatedCost} | Potential Added Sale Value Range: ${improvement.potentialAddedValue}`,
+    );
+  });
+
+  addSectionTitle("Sell As-Is vs Improve Comparison");
+  addParagraph(`Sell As-Is: ${report.asIsSummary}`);
+  addParagraph(`Improve Before Launch: ${report.improveSummary}`);
+
+  addSectionTitle("Marketing Strategy");
+  addBulletList(report.marketingStrategy);
+
+  addSectionTitle("Next Steps");
+  addBulletList(report.nextSteps);
+
+  doc.save("listingpilot-home-sale-optimization-report.pdf");
 }
 
 export default function Home() {
@@ -550,13 +668,21 @@ export default function Home() {
 
           {report && (
             <div className="rounded-md border border-slate-200 bg-white shadow-sm">
-              <div className="border-b border-slate-200 p-5">
-                <p className="text-sm font-semibold uppercase tracking-[0.18em] text-teal-700">
-                  Generated Report
-                </p>
-                <h2 className="mt-2 text-2xl font-semibold">
-                  Home Sale Optimization Report
-                </h2>
+              <div className="flex flex-col gap-4 border-b border-slate-200 p-5 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm font-semibold uppercase tracking-[0.18em] text-teal-700">
+                    Generated Report
+                  </p>
+                  <h2 className="mt-2 text-2xl font-semibold">
+                    Home Sale Optimization Report
+                  </h2>
+                </div>
+                <button
+                  className="rounded-md bg-teal-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-teal-800"
+                  onClick={() => exportReportPdf(report)}
+                >
+                  Download PDF
+                </button>
               </div>
 
               <div className="grid gap-0 lg:grid-cols-[1fr_320px]">
