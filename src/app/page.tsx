@@ -28,6 +28,25 @@ type AreaFinding = {
   confidence: Confidence;
 };
 
+type ImprovementPlan = {
+  area: PropertyArea;
+  priority: "High" | "Medium";
+  recommendation: string;
+  estimatedCost: string;
+  potentialAddedValue: string;
+};
+
+type OptimizationReport = {
+  propertySummary: string;
+  marketValue: string;
+  findings: AreaFinding[];
+  improvements: ImprovementPlan[];
+  asIsSummary: string;
+  improveSummary: string;
+  marketingStrategy: string[];
+  nextSteps: string[];
+};
+
 const propertyAreas: PropertyArea[] = [
   "Kitchen",
   "Bathrooms",
@@ -41,6 +60,36 @@ const confidenceStyles: Record<Confidence, string> = {
   High: "border-emerald-200 bg-emerald-50 text-emerald-700",
   Medium: "border-amber-200 bg-amber-50 text-amber-700",
   Low: "border-slate-200 bg-slate-50 text-slate-700",
+};
+
+const improvementRanges: Record<
+  PropertyArea,
+  Pick<ImprovementPlan, "estimatedCost" | "potentialAddedValue">
+> = {
+  Kitchen: {
+    estimatedCost: "$750 - $4,500",
+    potentialAddedValue: "$3,000 - $12,000",
+  },
+  Bathrooms: {
+    estimatedCost: "$500 - $3,500",
+    potentialAddedValue: "$2,000 - $9,000",
+  },
+  "Living Areas": {
+    estimatedCost: "$300 - $2,500",
+    potentialAddedValue: "$1,500 - $6,500",
+  },
+  Bedrooms: {
+    estimatedCost: "$250 - $1,800",
+    potentialAddedValue: "$1,000 - $4,000",
+  },
+  Exterior: {
+    estimatedCost: "$600 - $5,000",
+    potentialAddedValue: "$3,000 - $14,000",
+  },
+  Landscaping: {
+    estimatedCost: "$350 - $3,000",
+    potentialAddedValue: "$2,000 - $8,000",
+  },
 };
 
 const analysisCopy: Record<PropertyArea, Omit<AreaFinding, "area" | "confidence">> = {
@@ -157,10 +206,62 @@ function buildFindings(photos: PhotoItem[]): AreaFinding[] {
   });
 }
 
+function buildReport(findings: AreaFinding[], photos: PhotoItem[]): OptimizationReport {
+  const strongestAreas = findings
+    .filter((finding) => finding.confidence !== "Low")
+    .map((finding) => finding.area);
+
+  const improvements: ImprovementPlan[] = findings.flatMap((finding, index) => {
+    const primaryRecommendation = finding.recommendations[0];
+    const priority: ImprovementPlan["priority"] =
+      index < 3 ? "High" : "Medium";
+
+    return primaryRecommendation
+      ? [
+          {
+            area: finding.area,
+            priority,
+            recommendation: primaryRecommendation,
+            ...improvementRanges[finding.area],
+          },
+        ]
+      : [];
+  });
+
+  return {
+    propertySummary: `Analysis based on ${photos.length} uploaded photos across ${findings.length} property areas. ${
+      strongestAreas.length
+        ? `The strongest coverage is in ${strongestAreas.join(", ")}.`
+        : "Additional photos would improve confidence before a final seller presentation."
+    }`,
+    marketValue:
+      "Current Market Value: Placeholder pending CMA, recent comparable sales, and agent pricing strategy.",
+    findings,
+    improvements,
+    asIsSummary:
+      "Selling as-is may reduce prep time and upfront spend, but visible cosmetic friction can weaken online conversion and give buyers more negotiation room.",
+    improveSummary:
+      "Completing targeted, photo-visible improvements can strengthen launch presentation, support pricing confidence, and create cleaner seller talking points.",
+    marketingStrategy: [
+      "Lead with the home's strongest lifestyle spaces in listing photos and social previews.",
+      "Use improvement notes to frame seller preparation as strategic, not cosmetic overreach.",
+      "Highlight fresh exterior, clean kitchen surfaces, and bright shared spaces in remarks.",
+      "Position completed work as buyer confidence signals during showings and follow-up.",
+    ],
+    nextSteps: [
+      "Collect any missing room or exterior photos before finalizing recommendations.",
+      "Review cost ranges with preferred vendors for local pricing accuracy.",
+      "Choose which high-priority improvements the seller can complete before photography.",
+      "Pair the final report with CMA pricing guidance and launch timeline.",
+    ],
+  };
+}
+
 export default function Home() {
   const [photos, setPhotos] = useState<PhotoItem[]>([]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [findings, setFindings] = useState<AreaFinding[]>([]);
+  const [report, setReport] = useState<OptimizationReport | null>(null);
 
   const photoCounts = useMemo(
     () =>
@@ -188,6 +289,7 @@ export default function Home() {
 
     setPhotos(nextPhotos);
     setFindings([]);
+    setReport(null);
     event.target.value = "";
   }
 
@@ -198,14 +300,20 @@ export default function Home() {
       ),
     );
     setFindings([]);
+    setReport(null);
   }
 
   function analyzePhotos() {
     setIsAnalyzing(true);
     window.setTimeout(() => {
       setFindings(buildFindings(photos));
+      setReport(null);
       setIsAnalyzing(false);
     }, 900);
+  }
+
+  function createReport() {
+    setReport(buildReport(findings, photos));
   }
 
   const readyForAnalysis = photos.length >= 6;
@@ -395,7 +503,20 @@ export default function Home() {
 
           {findings.length > 0 && (
             <div className="rounded-md border border-slate-200 bg-white p-5 shadow-sm">
-              <h2 className="text-lg font-semibold">AI Findings Preview</h2>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold">AI Findings Preview</h2>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Review the analysis, then generate the seller-facing report.
+                  </p>
+                </div>
+                <button
+                  className="rounded-md bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
+                  onClick={createReport}
+                >
+                  Create Report
+                </button>
+              </div>
               <div className="mt-4 grid gap-4 xl:grid-cols-2">
                 {findings.map((finding) => (
                   <article
@@ -423,6 +544,151 @@ export default function Home() {
                     </div>
                   </article>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {report && (
+            <div className="rounded-md border border-slate-200 bg-white shadow-sm">
+              <div className="border-b border-slate-200 p-5">
+                <p className="text-sm font-semibold uppercase tracking-[0.18em] text-teal-700">
+                  Generated Report
+                </p>
+                <h2 className="mt-2 text-2xl font-semibold">
+                  Home Sale Optimization Report
+                </h2>
+              </div>
+
+              <div className="grid gap-0 lg:grid-cols-[1fr_320px]">
+                <div className="space-y-6 p-5">
+                  <section>
+                    <h3 className="text-base font-semibold">
+                      Property Summary
+                    </h3>
+                    <p className="mt-2 text-sm leading-6 text-slate-600">
+                      {report.propertySummary}
+                    </p>
+                  </section>
+
+                  <section>
+                    <h3 className="text-base font-semibold">
+                      Current Market Value
+                    </h3>
+                    <p className="mt-2 rounded-md border border-dashed border-slate-300 bg-slate-50 p-3 text-sm leading-6 text-slate-600">
+                      {report.marketValue}
+                    </p>
+                  </section>
+
+                  <section>
+                    <h3 className="text-base font-semibold">AI Findings</h3>
+                    <div className="mt-3 space-y-3">
+                      {report.findings.map((finding) => (
+                        <div
+                          key={finding.area}
+                          className="rounded-md border border-slate-200 p-4"
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="font-semibold">{finding.area}</p>
+                            <span
+                              className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${confidenceStyles[finding.confidence]}`}
+                            >
+                              {finding.confidence}
+                            </span>
+                          </div>
+                          <p className="mt-2 text-sm leading-6 text-slate-600">
+                            {finding.condition}
+                          </p>
+                          <p className="mt-3 text-sm font-semibold">
+                            Seller Talking Points
+                          </p>
+                          <ul className="mt-2 space-y-1 text-sm leading-6 text-slate-600">
+                            {finding.sellerTalkingPoints.map((point) => (
+                              <li key={point}>{point}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+
+                  <section>
+                    <h3 className="text-base font-semibold">
+                      Recommended Improvements
+                    </h3>
+                    <div className="mt-3 overflow-hidden rounded-md border border-slate-200">
+                      <div className="grid grid-cols-[1fr_120px_140px] bg-slate-100 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        <span>Recommendation</span>
+                        <span>Cost</span>
+                        <span>Added Value</span>
+                      </div>
+                      {report.improvements.map((improvement) => (
+                        <div
+                          key={`${improvement.area}-${improvement.recommendation}`}
+                          className="grid grid-cols-[1fr_120px_140px] gap-3 border-t border-slate-200 px-4 py-3 text-sm"
+                        >
+                          <div>
+                            <p className="font-semibold">
+                              {improvement.area} · {improvement.priority}
+                            </p>
+                            <p className="mt-1 leading-6 text-slate-600">
+                              {improvement.recommendation}
+                            </p>
+                          </div>
+                          <span className="text-slate-700">
+                            {improvement.estimatedCost}
+                          </span>
+                          <span className="text-slate-700">
+                            {improvement.potentialAddedValue}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+
+                  <section>
+                    <h3 className="text-base font-semibold">
+                      Sell As-Is vs Improve Comparison
+                    </h3>
+                    <div className="mt-3 grid gap-3 md:grid-cols-2">
+                      <div className="rounded-md border border-slate-200 bg-slate-50 p-4">
+                        <p className="font-semibold">Sell As-Is</p>
+                        <p className="mt-2 text-sm leading-6 text-slate-600">
+                          {report.asIsSummary}
+                        </p>
+                      </div>
+                      <div className="rounded-md border border-teal-200 bg-teal-50 p-4">
+                        <p className="font-semibold text-teal-900">
+                          Improve Before Launch
+                        </p>
+                        <p className="mt-2 text-sm leading-6 text-teal-900">
+                          {report.improveSummary}
+                        </p>
+                      </div>
+                    </div>
+                  </section>
+                </div>
+
+                <aside className="border-t border-slate-200 bg-slate-50 p-5 lg:border-l lg:border-t-0">
+                  <section>
+                    <h3 className="text-base font-semibold">
+                      Marketing Strategy
+                    </h3>
+                    <ul className="mt-3 space-y-3 text-sm leading-6 text-slate-600">
+                      {report.marketingStrategy.map((strategy) => (
+                        <li key={strategy}>{strategy}</li>
+                      ))}
+                    </ul>
+                  </section>
+
+                  <section className="mt-8">
+                    <h3 className="text-base font-semibold">Next Steps</h3>
+                    <ol className="mt-3 space-y-3 text-sm leading-6 text-slate-600">
+                      {report.nextSteps.map((step) => (
+                        <li key={step}>{step}</li>
+                      ))}
+                    </ol>
+                  </section>
+                </aside>
               </div>
             </div>
           )}
