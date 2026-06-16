@@ -62,9 +62,10 @@ const propertyAreas: PropertyArea[] = [
 ];
 
 const confidenceStyles: Record<Confidence, string> = {
-  High: "border-emerald-200 bg-emerald-50 text-emerald-700",
-  Medium: "border-amber-200 bg-amber-50 text-amber-700",
-  Low: "border-slate-200 bg-slate-50 text-slate-700",
+  High: "border-[rgba(22,163,74,0.25)] bg-[rgba(22,163,74,0.12)] text-[#16a34a]",
+  Medium:
+    "border-[rgba(212,160,23,0.25)] bg-[rgba(212,160,23,0.12)] text-[#B45309]",
+  Low: "border-[rgba(234,88,12,0.25)] bg-[rgba(234,88,12,0.12)] text-[#ea580c]",
 };
 
 const improvementRanges: Record<
@@ -446,295 +447,355 @@ export default function Home() {
       <div className="flex h-full flex-col bg-[#F0F2F8] text-[#111827]">
         <RealtyEdgePageHeader />
         <div className="flex-1 overflow-y-auto">
-      <section className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex w-full max-w-7xl flex-col gap-8 px-5 py-8 sm:px-8 lg:px-10">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <div className="max-w-3xl">
-              <p className="text-sm font-semibold uppercase tracking-[0.18em] text-teal-700">
-                ListingPilot AI
-              </p>
-              <h1 className="mt-3 text-4xl font-semibold tracking-normal text-slate-950 sm:text-5xl">
-                Home Sale Optimization Report
-              </h1>
-              <p className="mt-4 max-w-2xl text-base leading-7 text-slate-600">
-                Upload property photos, review AI-assisted condition findings,
-                and prepare seller-ready recommendations for the listing plan.
-              </p>
-            </div>
-            <div className="grid grid-cols-3 gap-3 rounded-md border border-slate-200 bg-slate-50 p-3 text-center">
-              <div>
-                <p className="text-2xl font-semibold">{photos.length}</p>
-                <p className="text-xs uppercase tracking-wide text-slate-500">
-                  Photos
-                </p>
-              </div>
-              <div>
-                <p className="text-2xl font-semibold">{findings.length}</p>
-                <p className="text-xs uppercase tracking-wide text-slate-500">
-                  Findings
-                </p>
-              </div>
-              <div>
-                <p className="text-2xl font-semibold">
-                  {photos.length ? formatBytes(totalSize) : "0 MB"}
-                </p>
-                <p className="text-xs uppercase tracking-wide text-slate-500">
-                  Uploaded
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section className="mx-auto grid w-full max-w-7xl gap-6 px-5 py-6 sm:px-8 lg:grid-cols-[360px_1fr] lg:px-10">
-        <aside className="space-y-6">
-          <div className="rounded-md border border-slate-200 bg-white p-5 shadow-sm">
-            <h2 className="text-lg font-semibold">Photo Upload</h2>
-            <p className="mt-2 text-sm leading-6 text-slate-600">
-              Upload 20-30 property photos for best coverage. A smaller sample
-              can still generate a draft analysis.
-            </p>
-            <label className="mt-5 flex cursor-pointer flex-col items-center justify-center rounded-md border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center transition hover:border-teal-500 hover:bg-teal-50">
-              <span className="text-sm font-semibold text-slate-900">
-                Select property photos
-              </span>
-              <span className="mt-1 text-xs text-slate-500">
-                JPG, PNG, or WebP. Up to 30 images.
-              </span>
-              <input
-                className="sr-only"
-                type="file"
-                accept="image/*"
-                multiple
-                onChange={handlePhotoUpload}
-              />
-            </label>
-
-            <div className="mt-5 rounded-md bg-slate-100 p-3">
-              <div className="flex items-center justify-between text-sm">
-                <span className="font-medium text-slate-700">
-                  Recommended range
-                </span>
-                <span
-                  className={
-                    recommendedCountMet ? "text-emerald-700" : "text-amber-700"
-                  }
-                >
-                  {recommendedCountMet ? "Met" : "20-30 photos"}
-                </span>
-              </div>
-            </div>
-
-            <button
-              className="mt-4 w-full rounded-md bg-teal-700 px-4 py-3 text-sm font-semibold text-white transition hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-slate-300"
-              disabled={!readyForAnalysis || isAnalyzing}
-              onClick={analyzePhotos}
-            >
-              {isAnalyzing ? "Analyzing photos..." : "Run AI Analysis"}
-            </button>
-          </div>
-
-          <div className="rounded-md border border-slate-200 bg-white p-5 shadow-sm">
-            <h2 className="text-lg font-semibold">Coverage</h2>
-            <div className="mt-4 space-y-3">
-              {photoCounts.map(({ area, count }) => (
-                <div key={area}>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="font-medium text-slate-700">{area}</span>
-                    <span className="text-slate-500">{count}</span>
-                  </div>
-                  <div className="mt-2 h-2 rounded-full bg-slate-100">
-                    <div
-                      className="h-2 rounded-full bg-teal-600"
-                      style={{ width: `${Math.min(count * 25, 100)}%` }}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </aside>
-
-        <div className="space-y-6">
-          <div className="rounded-md border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <h2 className="text-lg font-semibold">Uploaded Photos</h2>
-                <p className="mt-1 text-sm text-slate-500">
-                  Confirm or adjust room categories before analysis.
-                </p>
-              </div>
-            </div>
-
-            {photos.length === 0 ? (
-              <div className="mt-5 flex min-h-80 items-center justify-center rounded-md border border-slate-200 bg-slate-50 text-center">
-                <div className="max-w-sm px-6">
-                  <p className="text-lg font-semibold text-slate-800">
-                    No photos uploaded yet
-                  </p>
-                  <p className="mt-2 text-sm leading-6 text-slate-500">
-                    Start with exterior, kitchen, bathroom, living area, and
-                    bedroom photos to produce a balanced report.
-                  </p>
-                </div>
-              </div>
-            ) : (
-              <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                {photos.map((photo) => (
-                  <article
-                    key={photo.id}
-                    className="overflow-hidden rounded-md border border-slate-200 bg-white"
+          <section className="mx-auto grid w-full max-w-[1180px] gap-6 px-5 py-6 sm:px-8 lg:grid-cols-[560px_1fr]">
+            <div className="flex min-w-0 flex-col gap-5">
+              <div className="grid grid-cols-3 gap-3">
+                {[
+                  { label: "Photos", value: photos.length },
+                  { label: "Findings", value: findings.length },
+                  {
+                    label: "Uploaded",
+                    value: photos.length ? formatBytes(totalSize) : "0 MB",
+                  },
+                ].map((metric) => (
+                  <div
+                    className="rounded-xl border border-[#E5E7EB] bg-white p-4 card-shadow"
+                    key={metric.label}
                   >
-                    <div className="aspect-[4/3] bg-slate-100">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        alt={photo.name}
-                        className="h-full w-full object-cover"
-                        src={photo.url}
-                      />
-                    </div>
-                    <div className="space-y-3 p-3">
-                      <div>
-                        <p className="truncate text-sm font-semibold">
-                          {photo.name}
-                        </p>
-                        <p className="text-xs text-slate-500">
-                          {formatBytes(photo.size)}
-                        </p>
-                      </div>
-                      <select
-                        className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
-                        value={photo.area}
-                        onChange={(event) =>
-                          updatePhotoArea(
-                            photo.id,
-                            event.target.value as PropertyArea,
-                          )
-                        }
-                      >
-                        {propertyAreas.map((area) => (
-                          <option key={area} value={area}>
-                            {area}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </article>
+                    <p className="text-[22px] font-extrabold tabular-nums text-[#111827]">
+                      {metric.value}
+                    </p>
+                    <p className="label-caps mt-1">{metric.label}</p>
+                  </div>
                 ))}
               </div>
-            )}
-          </div>
 
-          {findings.length > 0 && (
-            <div className="rounded-md border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <h2 className="text-lg font-semibold">AI Findings Preview</h2>
-                  <p className="mt-1 text-sm text-slate-500">
-                    Review the analysis, then generate the seller-facing report.
-                  </p>
+              <div className="rounded-2xl border border-[#E5E7EB] bg-white p-6 card-shadow">
+                <div className="mb-5 flex items-center gap-3">
+                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#D4A017] text-xs font-extrabold text-[#111827]">
+                    1
+                  </div>
+                  <div>
+                    <h2 className="text-base font-bold text-[#111827]">
+                      Upload Photos
+                    </h2>
+                    <p className="mt-0.5 text-xs text-[#6B7280]">
+                      Upload 20-30 property photos for best coverage.
+                    </p>
+                  </div>
                 </div>
+
+                <label className="flex cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-[#D1D5DB] bg-[#F9FAFB] px-4 py-8 text-center transition hover:border-[#D4A017] hover:bg-[#FDF9EE]">
+                  <span className="text-sm font-bold text-[#111827]">
+                    Select property photos
+                  </span>
+                  <span className="mt-1 text-xs font-medium text-[#6B7280]">
+                    JPG, PNG, or WebP. Up to 30 images.
+                  </span>
+                  <input
+                    accept="image/*"
+                    className="sr-only"
+                    multiple
+                    onChange={handlePhotoUpload}
+                    type="file"
+                  />
+                </label>
+
+                <div className="mt-4 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-2.5">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="font-semibold text-[#6B7280]">
+                      Recommended range
+                    </span>
+                    <span
+                      className={
+                        recommendedCountMet
+                          ? "font-bold text-[#16a34a]"
+                          : "font-bold text-[#B45309]"
+                      }
+                    >
+                      {recommendedCountMet ? "Met" : "20-30 photos"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-[#E5E7EB] bg-white p-6 card-shadow">
+                <div className="mb-5 flex items-center gap-3">
+                  <div
+                    className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-extrabold ${
+                      findings.length
+                        ? "bg-[#16a34a] text-white"
+                        : "border-2 border-[#E5E7EB] text-[#6B7280]"
+                    }`}
+                  >
+                    2
+                  </div>
+                  <div>
+                    <h2 className="text-base font-bold text-[#111827]">
+                      Review Analysis
+                    </h2>
+                    <p className="mt-0.5 text-xs text-[#6B7280]">
+                      Confirm photo coverage and run the AI assessment.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  {photoCounts.map(({ area, count }) => (
+                    <div key={area}>
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="font-semibold text-[#374151]">
+                          {area}
+                        </span>
+                        <span className="font-bold tabular-nums text-[#9CA3AF]">
+                          {count}
+                        </span>
+                      </div>
+                      <div className="mt-2 h-2 rounded-full bg-[#F3F4F6]">
+                        <div
+                          className="h-2 rounded-full bg-[#D4A017]"
+                          style={{ width: `${Math.min(count * 25, 100)}%` }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
                 <button
-                  className="rounded-md bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
+                  className="btn-press mt-5 flex w-full items-center justify-center rounded-xl bg-[#D4A017] px-5 py-3 text-sm font-extrabold text-[#111827] shadow-[0_2px_8px_rgba(212,160,23,0.3)] transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+                  disabled={!readyForAnalysis || isAnalyzing}
+                  onClick={analyzePhotos}
+                  type="button"
+                >
+                  {isAnalyzing ? "Analyzing photos..." : "Run AI Analysis"}
+                </button>
+              </div>
+
+              <div className="rounded-2xl border border-[#E5E7EB] bg-white p-6 card-shadow">
+                <div className="mb-5 flex items-center gap-3">
+                  <div
+                    className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-extrabold ${
+                      report
+                        ? "bg-[#16a34a] text-white"
+                        : "border-2 border-[#E5E7EB] text-[#6B7280]"
+                    }`}
+                  >
+                    3
+                  </div>
+                  <div>
+                    <h2 className="text-base font-bold text-[#111827]">
+                      Generate Report
+                    </h2>
+                    <p className="mt-0.5 text-xs text-[#6B7280]">
+                      Create the seller-facing optimization report.
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  className="btn-press flex w-full items-center justify-center rounded-xl bg-[#1B2238] px-5 py-3 text-sm font-extrabold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+                  disabled={findings.length === 0}
                   onClick={createReport}
+                  type="button"
                 >
                   Create Report
                 </button>
               </div>
-              <div className="mt-4 grid gap-4 xl:grid-cols-2">
-                {findings.map((finding) => (
-                  <article
-                    key={finding.area}
-                    className="rounded-md border border-slate-200 p-4"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <h3 className="font-semibold">{finding.area}</h3>
-                      <span
-                        className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${confidenceStyles[finding.confidence]}`}
-                      >
-                        {finding.confidence}
-                      </span>
-                    </div>
-                    <p className="mt-3 text-sm leading-6 text-slate-600">
-                      {finding.condition}
-                    </p>
-                    <div className="mt-4">
-                      <p className="text-sm font-semibold">Recommendations</p>
-                      <ul className="mt-2 space-y-2 text-sm leading-6 text-slate-600">
-                        {finding.recommendations.map((recommendation) => (
-                          <li key={recommendation}>{recommendation}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            </div>
-          )}
 
-          {report && (
-            <div className="rounded-md border border-slate-200 bg-white shadow-sm">
-              <div className="flex flex-col gap-4 border-b border-slate-200 p-5 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="text-sm font-semibold uppercase tracking-[0.18em] text-teal-700">
-                    Generated Report
-                  </p>
-                  <h2 className="mt-2 text-2xl font-semibold">
-                    Home Sale Optimization Report
-                  </h2>
+              <div className="rounded-2xl border border-[#E5E7EB] bg-white p-6 card-shadow">
+                <div className="mb-5 flex items-center gap-3">
+                  <div
+                    className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-extrabold ${
+                      report
+                        ? "bg-[#D4A017] text-[#111827]"
+                        : "border-2 border-[#E5E7EB] text-[#6B7280]"
+                    }`}
+                  >
+                    4
+                  </div>
+                  <div>
+                    <h2 className="text-base font-bold text-[#111827]">
+                      Export PDF
+                    </h2>
+                    <p className="mt-0.5 text-xs text-[#6B7280]">
+                      Download the completed Home Sale Optimization Report.
+                    </p>
+                  </div>
                 </div>
+
                 <button
-                  className="rounded-md bg-teal-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-teal-800"
-                  onClick={() => exportReportPdf(report)}
+                  className="btn-press flex w-full items-center justify-center rounded-xl bg-[#D4A017] px-5 py-3 text-sm font-extrabold text-[#111827] shadow-[0_2px_8px_rgba(212,160,23,0.3)] transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+                  disabled={!report}
+                  onClick={() => report && exportReportPdf(report)}
+                  type="button"
                 >
                   Download PDF
                 </button>
               </div>
+            </div>
 
-              <div className="grid gap-0 lg:grid-cols-[1fr_320px]">
-                <div className="space-y-6 p-5">
+            <div className="min-w-0 space-y-5">
+              <div className="rounded-2xl border border-[#E5E7EB] bg-white p-5 card-shadow">
+                <div>
+                  <h2 className="text-base font-bold text-[#111827]">
+                    Uploaded Photos
+                  </h2>
+                  <p className="mt-1 text-sm text-[#6B7280]">
+                    Confirm or adjust room categories before analysis.
+                  </p>
+                </div>
+
+                {photos.length === 0 ? (
+                  <div className="mt-5 flex min-h-72 items-center justify-center rounded-xl border border-[#E5E7EB] bg-[#F9FAFB] text-center">
+                    <div className="max-w-sm px-6">
+                      <p className="text-[15px] font-bold text-[#111827]">
+                        No photos uploaded yet
+                      </p>
+                      <p className="mt-2 text-sm leading-6 text-[#6B7280]">
+                        Start with exterior, kitchen, bathroom, living area, and
+                        bedroom photos to produce a balanced report.
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                    {photos.map((photo) => (
+                      <article
+                        className="overflow-hidden rounded-xl border border-[#E5E7EB] bg-white card-shadow"
+                        key={photo.id}
+                      >
+                        <div className="aspect-[4/3] bg-[#F3F4F6]">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            alt={photo.name}
+                            className="h-full w-full object-cover"
+                            src={photo.url}
+                          />
+                        </div>
+                        <div className="space-y-3 p-3.5">
+                          <div>
+                            <p className="truncate text-sm font-bold text-[#111827]">
+                              {photo.name}
+                            </p>
+                            <p className="text-xs text-[#9CA3AF]">
+                              {formatBytes(photo.size)}
+                            </p>
+                          </div>
+                          <select
+                            className="rep-input py-2 text-sm"
+                            onChange={(event) =>
+                              updatePhotoArea(
+                                photo.id,
+                                event.target.value as PropertyArea,
+                              )
+                            }
+                            value={photo.area}
+                          >
+                            {propertyAreas.map((area) => (
+                              <option key={area} value={area}>
+                                {area}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {findings.length > 0 && (
+                <div className="rounded-2xl border border-[#E5E7EB] bg-white p-5 card-shadow">
+                  <h2 className="text-base font-bold text-[#111827]">
+                    AI Findings Preview
+                  </h2>
+                  <div className="mt-4 grid gap-4 xl:grid-cols-2">
+                    {findings.map((finding) => (
+                      <article
+                        className="rounded-xl border border-[#E5E7EB] p-4"
+                        key={finding.area}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <h3 className="font-bold text-[#111827]">
+                            {finding.area}
+                          </h3>
+                          <span
+                            className={`rounded-full border px-2.5 py-1 text-xs font-bold ${confidenceStyles[finding.confidence]}`}
+                          >
+                            {finding.confidence}
+                          </span>
+                        </div>
+                        <p className="mt-3 text-sm leading-6 text-[#6B7280]">
+                          {finding.condition}
+                        </p>
+                        <div className="mt-4">
+                          <p className="label-caps">Recommendations</p>
+                          <ul className="mt-2 space-y-2 text-sm leading-6 text-[#6B7280]">
+                            {finding.recommendations.map((recommendation) => (
+                              <li key={recommendation}>{recommendation}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {report && (
+                <div className="rounded-2xl border border-[#E5E7EB] bg-white card-shadow">
+                  <div className="border-b border-[#E5E7EB] p-5">
+                    <p className="label-caps text-[#B45309]">
+                      Generated Report
+                    </p>
+                    <h2 className="mt-2 text-xl font-extrabold text-[#111827]">
+                      Home Sale Optimization Report
+                    </h2>
+                  </div>
+
+                  <div className="grid gap-0 lg:grid-cols-[1fr_320px]">
+                    <div className="space-y-6 p-5">
                   <section>
-                    <h3 className="text-base font-semibold">
+                    <h3 className="text-base font-bold text-[#111827]">
                       Property Summary
                     </h3>
-                    <p className="mt-2 text-sm leading-6 text-slate-600">
+                    <p className="mt-2 text-sm leading-6 text-[#6B7280]">
                       {report.propertySummary}
                     </p>
                   </section>
 
                   <section>
-                    <h3 className="text-base font-semibold">
+                    <h3 className="text-base font-bold text-[#111827]">
                       Current Market Value
                     </h3>
-                    <p className="mt-2 rounded-md border border-dashed border-slate-300 bg-slate-50 p-3 text-sm leading-6 text-slate-600">
+                    <p className="mt-2 rounded-lg border border-dashed border-[#D1D5DB] bg-[#F9FAFB] p-3 text-sm leading-6 text-[#6B7280]">
                       {report.marketValue}
                     </p>
                   </section>
 
                   <section>
-                    <h3 className="text-base font-semibold">AI Findings</h3>
+                    <h3 className="text-base font-bold text-[#111827]">AI Findings</h3>
                     <div className="mt-3 space-y-3">
                       {report.findings.map((finding) => (
                         <div
                           key={finding.area}
-                          className="rounded-md border border-slate-200 p-4"
+                          className="rounded-xl border border-[#E5E7EB] p-4"
                         >
                           <div className="flex items-center justify-between gap-3">
-                            <p className="font-semibold">{finding.area}</p>
+                            <p className="font-bold text-[#111827]">{finding.area}</p>
                             <span
-                              className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${confidenceStyles[finding.confidence]}`}
+                              className={`rounded-full border px-2.5 py-1 text-xs font-bold ${confidenceStyles[finding.confidence]}`}
                             >
                               {finding.confidence}
                             </span>
                           </div>
-                          <p className="mt-2 text-sm leading-6 text-slate-600">
+                          <p className="mt-2 text-sm leading-6 text-[#6B7280]">
                             {finding.condition}
                           </p>
-                          <p className="mt-3 text-sm font-semibold">
+                          <p className="label-caps mt-3">
                             Seller Talking Points
                           </p>
-                          <ul className="mt-2 space-y-1 text-sm leading-6 text-slate-600">
+                          <ul className="mt-2 space-y-1 text-sm leading-6 text-[#6B7280]">
                             {finding.sellerTalkingPoints.map((point) => (
                               <li key={point}>{point}</li>
                             ))}
@@ -745,32 +806,32 @@ export default function Home() {
                   </section>
 
                   <section>
-                    <h3 className="text-base font-semibold">
+                    <h3 className="text-base font-bold text-[#111827]">
                       Recommended Improvements
                     </h3>
-                    <div className="mt-3 overflow-hidden rounded-md border border-slate-200">
-                      <div className="grid grid-cols-[1fr_120px_140px] bg-slate-100 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        <span>Recommendation</span>
-                        <span>Cost</span>
-                        <span>Added Value</span>
+                    <div className="mt-3 overflow-hidden rounded-xl border border-[#E5E7EB]">
+                      <div className="grid grid-cols-[1fr_120px_140px] bg-[#F9FAFB] px-4 py-3">
+                        <span className="label-caps">Recommendation</span>
+                        <span className="label-caps">Cost</span>
+                        <span className="label-caps">Added Value</span>
                       </div>
                       {report.improvements.map((improvement) => (
                         <div
                           key={`${improvement.area}-${improvement.recommendation}`}
-                          className="grid grid-cols-[1fr_120px_140px] gap-3 border-t border-slate-200 px-4 py-3 text-sm"
+                          className="grid grid-cols-[1fr_120px_140px] gap-3 border-t border-[#F3F4F6] px-4 py-3 text-sm"
                         >
                           <div>
-                            <p className="font-semibold">
-                              {improvement.area} · {improvement.priority}
+                            <p className="font-bold text-[#111827]">
+                              {improvement.area} - {improvement.priority}
                             </p>
-                            <p className="mt-1 leading-6 text-slate-600">
+                            <p className="mt-1 leading-6 text-[#6B7280]">
                               {improvement.recommendation}
                             </p>
                           </div>
-                          <span className="text-slate-700">
+                          <span className="font-semibold text-[#374151]">
                             {improvement.estimatedCost}
                           </span>
-                          <span className="text-slate-700">
+                          <span className="font-semibold text-[#374151]">
                             {improvement.potentialAddedValue}
                           </span>
                         </div>
@@ -779,21 +840,21 @@ export default function Home() {
                   </section>
 
                   <section>
-                    <h3 className="text-base font-semibold">
+                    <h3 className="text-base font-bold text-[#111827]">
                       Sell As-Is vs Improve Comparison
                     </h3>
                     <div className="mt-3 grid gap-3 md:grid-cols-2">
-                      <div className="rounded-md border border-slate-200 bg-slate-50 p-4">
-                        <p className="font-semibold">Sell As-Is</p>
-                        <p className="mt-2 text-sm leading-6 text-slate-600">
+                      <div className="rounded-xl border border-[#E5E7EB] bg-[#F9FAFB] p-4">
+                        <p className="font-bold text-[#111827]">Sell As-Is</p>
+                        <p className="mt-2 text-sm leading-6 text-[#6B7280]">
                           {report.asIsSummary}
                         </p>
                       </div>
-                      <div className="rounded-md border border-teal-200 bg-teal-50 p-4">
-                        <p className="font-semibold text-teal-900">
+                      <div className="rounded-xl border border-[rgba(212,160,23,0.28)] bg-[rgba(212,160,23,0.08)] p-4">
+                        <p className="font-bold text-[#92640a]">
                           Improve Before Launch
                         </p>
-                        <p className="mt-2 text-sm leading-6 text-teal-900">
+                        <p className="mt-2 text-sm leading-6 text-[#6B7280]">
                           {report.improveSummary}
                         </p>
                       </div>
@@ -801,12 +862,12 @@ export default function Home() {
                   </section>
                 </div>
 
-                <aside className="border-t border-slate-200 bg-slate-50 p-5 lg:border-l lg:border-t-0">
+                <aside className="border-t border-[#E5E7EB] bg-[#F9FAFB] p-5 lg:border-l lg:border-t-0">
                   <section>
-                    <h3 className="text-base font-semibold">
+                    <h3 className="text-base font-bold text-[#111827]">
                       Marketing Strategy
                     </h3>
-                    <ul className="mt-3 space-y-3 text-sm leading-6 text-slate-600">
+                    <ul className="mt-3 space-y-3 text-sm leading-6 text-[#6B7280]">
                       {report.marketingStrategy.map((strategy) => (
                         <li key={strategy}>{strategy}</li>
                       ))}
@@ -814,8 +875,8 @@ export default function Home() {
                   </section>
 
                   <section className="mt-8">
-                    <h3 className="text-base font-semibold">Next Steps</h3>
-                    <ol className="mt-3 space-y-3 text-sm leading-6 text-slate-600">
+                    <h3 className="text-base font-bold text-[#111827]">Next Steps</h3>
+                    <ol className="mt-3 space-y-3 text-sm leading-6 text-[#6B7280]">
                       {report.nextSteps.map((step) => (
                         <li key={step}>{step}</li>
                       ))}
