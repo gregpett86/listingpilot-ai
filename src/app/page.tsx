@@ -2,6 +2,10 @@
 
 import { ChangeEvent, useMemo, useState } from "react";
 import { jsPDF } from "jspdf";
+import {
+  RealtyEdgePageHeader,
+  RealtyEdgeShell,
+} from "@/components/realty-edge-shell";
 
 type PropertyArea =
   | "Kitchen"
@@ -438,7 +442,10 @@ export default function Home() {
   const recommendedCountMet = photos.length >= 20 && photos.length <= 30;
 
   return (
-    <main className="min-h-screen bg-[#f6f4ef] text-slate-950">
+    <RealtyEdgeShell>
+      <div className="flex h-full flex-col bg-[#F0F2F8] text-[#111827]">
+        <RealtyEdgePageHeader />
+        <div className="flex-1 overflow-y-auto">
       <section className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex w-full max-w-7xl flex-col gap-8 px-5 py-8 sm:px-8 lg:px-10">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -820,6 +827,8 @@ export default function Home() {
           )}
         </div>
       </section>
-    </main>
+        </div>
+      </div>
+    </RealtyEdgeShell>
   );
 }
