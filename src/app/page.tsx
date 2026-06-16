@@ -6,6 +6,12 @@ import {
   RealtyEdgePageHeader,
   RealtyEdgeShell,
 } from "@/components/realty-edge-shell";
+import {
+  ConfidenceBadge,
+  MetricCard,
+  SectionCard,
+  StepCard,
+} from "@/components/listing-pilot-ui";
 
 type PropertyArea =
   | "Kitchen"
@@ -60,13 +66,6 @@ const propertyAreas: PropertyArea[] = [
   "Exterior",
   "Landscaping",
 ];
-
-const confidenceStyles: Record<Confidence, string> = {
-  High: "border-[rgba(22,163,74,0.25)] bg-[rgba(22,163,74,0.12)] text-[#16a34a]",
-  Medium:
-    "border-[rgba(212,160,23,0.25)] bg-[rgba(212,160,23,0.12)] text-[#B45309]",
-  Low: "border-[rgba(234,88,12,0.25)] bg-[rgba(234,88,12,0.12)] text-[#ea580c]",
-};
 
 const improvementRanges: Record<
   PropertyArea,
@@ -474,33 +473,20 @@ export default function Home() {
                     value: photos.length ? formatBytes(totalSize) : "0 MB",
                   },
                 ].map((metric) => (
-                  <div
-                    className="rounded-xl border border-[#E5E7EB] bg-white p-4 card-shadow"
+                  <MetricCard
                     key={metric.label}
-                  >
-                    <p className="text-[22px] font-extrabold tabular-nums text-[#111827]">
-                      {metric.value}
-                    </p>
-                    <p className="label-caps mt-1">{metric.label}</p>
-                  </div>
+                    label={metric.label}
+                    value={metric.value}
+                  />
                 ))}
               </div>
 
-              <div className="rounded-2xl border border-[#E5E7EB] bg-white p-6 card-shadow">
-                <div className="mb-5 flex items-center gap-3">
-                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#D4A017] text-xs font-extrabold text-[#111827]">
-                    1
-                  </div>
-                  <div>
-                    <h2 className="text-base font-bold text-[#111827]">
-                      Upload Photos
-                    </h2>
-                    <p className="mt-0.5 text-xs text-[#6B7280]">
-                      Upload 20-30 property photos for best coverage.
-                    </p>
-                  </div>
-                </div>
-
+              <StepCard
+                description="Upload 20-30 property photos for best coverage."
+                isReady
+                step={1}
+                title="Upload Photos"
+              >
                 <label className="flex cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-[#D1D5DB] bg-[#F9FAFB] px-4 py-8 text-center transition hover:border-[#D4A017] hover:bg-[#FDF9EE]">
                   <span className="text-sm font-bold text-[#111827]">
                     Select property photos
@@ -533,29 +519,14 @@ export default function Home() {
                     </span>
                   </div>
                 </div>
-              </div>
+              </StepCard>
 
-              <div className="rounded-2xl border border-[#E5E7EB] bg-white p-6 card-shadow">
-                <div className="mb-5 flex items-center gap-3">
-                  <div
-                    className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-extrabold ${
-                      findings.length
-                        ? "bg-[#16a34a] text-white"
-                        : "border-2 border-[#E5E7EB] text-[#6B7280]"
-                    }`}
-                  >
-                    2
-                  </div>
-                  <div>
-                    <h2 className="text-base font-bold text-[#111827]">
-                      Review Analysis
-                    </h2>
-                    <p className="mt-0.5 text-xs text-[#6B7280]">
-                      Confirm photo coverage and run the AI assessment.
-                    </p>
-                  </div>
-                </div>
-
+              <StepCard
+                description="Confirm photo coverage and run the AI assessment."
+                isComplete={findings.length > 0}
+                step={2}
+                title="Review Analysis"
+              >
                 <div className="space-y-3">
                   {photoCounts.map(({ area, count }) => (
                     <div key={area}>
@@ -585,29 +556,14 @@ export default function Home() {
                 >
                   {isAnalyzing ? "Analyzing photos..." : "Run AI Analysis"}
                 </button>
-              </div>
+              </StepCard>
 
-              <div className="rounded-2xl border border-[#E5E7EB] bg-white p-6 card-shadow">
-                <div className="mb-5 flex items-center gap-3">
-                  <div
-                    className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-extrabold ${
-                      report
-                        ? "bg-[#16a34a] text-white"
-                        : "border-2 border-[#E5E7EB] text-[#6B7280]"
-                    }`}
-                  >
-                    3
-                  </div>
-                  <div>
-                    <h2 className="text-base font-bold text-[#111827]">
-                      Generate Report
-                    </h2>
-                    <p className="mt-0.5 text-xs text-[#6B7280]">
-                      Create the seller-facing optimization report.
-                    </p>
-                  </div>
-                </div>
-
+              <StepCard
+                description="Create the seller-facing optimization report."
+                isComplete={Boolean(report)}
+                step={3}
+                title="Generate Report"
+              >
                 <button
                   className="btn-press flex w-full items-center justify-center rounded-xl bg-[#1B2238] px-5 py-3 text-sm font-extrabold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
                   disabled={findings.length === 0}
@@ -616,29 +572,14 @@ export default function Home() {
                 >
                   Create Report
                 </button>
-              </div>
+              </StepCard>
 
-              <div className="rounded-2xl border border-[#E5E7EB] bg-white p-6 card-shadow">
-                <div className="mb-5 flex items-center gap-3">
-                  <div
-                    className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-extrabold ${
-                      report
-                        ? "bg-[#D4A017] text-[#111827]"
-                        : "border-2 border-[#E5E7EB] text-[#6B7280]"
-                    }`}
-                  >
-                    4
-                  </div>
-                  <div>
-                    <h2 className="text-base font-bold text-[#111827]">
-                      Export PDF
-                    </h2>
-                    <p className="mt-0.5 text-xs text-[#6B7280]">
-                      Download the completed Home Sale Optimization Report.
-                    </p>
-                  </div>
-                </div>
-
+              <StepCard
+                description="Download the completed Home Sale Optimization Report."
+                isReady={Boolean(report)}
+                step={4}
+                title="Export PDF"
+              >
                 <button
                   className="btn-press flex w-full items-center justify-center rounded-xl bg-[#D4A017] px-5 py-3 text-sm font-extrabold text-[#111827] shadow-[0_2px_8px_rgba(212,160,23,0.3)] transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
                   disabled={!report}
@@ -647,11 +588,11 @@ export default function Home() {
                 >
                   Download PDF
                 </button>
-              </div>
+              </StepCard>
             </div>
 
             <div className="min-w-0 space-y-5">
-              <div className="rounded-2xl border border-[#E5E7EB] bg-white p-5 card-shadow">
+              <SectionCard>
                 <div>
                   <h2 className="text-base font-bold text-[#111827]">
                     Uploaded Photos
@@ -718,10 +659,10 @@ export default function Home() {
                     ))}
                   </div>
                 )}
-              </div>
+              </SectionCard>
 
               {findings.length > 0 && (
-                <div className="rounded-2xl border border-[#E5E7EB] bg-white p-5 card-shadow">
+                <SectionCard>
                   <h2 className="text-base font-bold text-[#111827]">
                     AI Findings Preview
                   </h2>
@@ -735,11 +676,7 @@ export default function Home() {
                           <h3 className="font-bold text-[#111827]">
                             {finding.area}
                           </h3>
-                          <span
-                            className={`rounded-full border px-2.5 py-1 text-xs font-bold ${confidenceStyles[finding.confidence]}`}
-                          >
-                            {finding.confidence}
-                          </span>
+                          <ConfidenceBadge confidence={finding.confidence} />
                         </div>
                         <p className="mt-3 text-sm leading-6 text-[#6B7280]">
                           {finding.condition}
@@ -755,7 +692,7 @@ export default function Home() {
                       </article>
                     ))}
                   </div>
-                </div>
+                </SectionCard>
               )}
 
               {report && (
@@ -799,11 +736,9 @@ export default function Home() {
                         >
                           <div className="flex items-center justify-between gap-3">
                             <p className="font-bold text-[#111827]">{finding.area}</p>
-                            <span
-                              className={`rounded-full border px-2.5 py-1 text-xs font-bold ${confidenceStyles[finding.confidence]}`}
-                            >
-                              {finding.confidence}
-                            </span>
+                                <ConfidenceBadge
+                                  confidence={finding.confidence}
+                                />
                           </div>
                           <p className="mt-2 text-sm leading-6 text-[#6B7280]">
                             {finding.condition}
