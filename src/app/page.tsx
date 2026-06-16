@@ -289,14 +289,19 @@ function exportReportPdf(report: OptimizationReport) {
   const doc = new jsPDF({ unit: "mm", format: "letter" });
   const margin = 18;
   const contentWidth = 180;
+  const navy: [number, number, number] = [27, 34, 56];
+  const gold: [number, number, number] = [212, 160, 23];
+  const bodyText: [number, number, number] = [71, 85, 105];
   let y = 20;
 
   const addSectionTitle = (title: string) => {
     y = ensurePdfSpace(doc, y, 18);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(13);
-    doc.setTextColor(15, 23, 42);
+    doc.setTextColor(...navy);
     doc.text(title, margin, y);
+    doc.setDrawColor(...gold);
+    doc.line(margin, y + 2, margin + 28, y + 2);
     y += 7;
   };
 
@@ -304,7 +309,7 @@ function exportReportPdf(report: OptimizationReport) {
     y = ensurePdfSpace(doc, y, 20);
     doc.setFont("helvetica", "normal");
     doc.setFontSize(10);
-    doc.setTextColor(71, 85, 105);
+    doc.setTextColor(...bodyText);
     y = addWrappedText(doc, text, margin, y, contentWidth, 5) + 3;
   };
 
@@ -316,22 +321,33 @@ function exportReportPdf(report: OptimizationReport) {
     items.forEach((item) => {
       y = ensurePdfSpace(doc, y, 14);
       const lines = doc.splitTextToSize(item, contentWidth - 6) as string[];
+      doc.setTextColor(...gold);
       doc.text("-", margin, y);
+      doc.setTextColor(...bodyText);
       doc.text(lines, margin + 5, y);
       y += lines.length * 5 + 2;
     });
     y += 2;
   };
 
+  doc.setFillColor(...navy);
+  doc.rect(0, 0, 216, 18, "F");
+  doc.setFillColor(...gold);
+  doc.rect(0, 18, 216, 1.5, "F");
+  y = 31;
   doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  doc.setTextColor(...gold);
+  doc.text("REALTY EDGE PRO", margin, y);
+  y += 7;
   doc.setFontSize(20);
-  doc.setTextColor(15, 23, 42);
-  doc.text("ListingPilot AI", margin, y);
-  y += 9;
-  doc.setFontSize(16);
+  doc.setTextColor(...navy);
+  doc.text("AI Listing Presentation", margin, y);
+  y += 8;
+  doc.setFontSize(15);
   doc.text("Home Sale Optimization Report", margin, y);
   y += 10;
-  doc.setDrawColor(13, 148, 136);
+  doc.setDrawColor(...gold);
   doc.line(margin, y, margin + contentWidth, y);
   y += 10;
 
@@ -346,7 +362,7 @@ function exportReportPdf(report: OptimizationReport) {
     y = ensurePdfSpace(doc, y, 30);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(11);
-    doc.setTextColor(15, 23, 42);
+    doc.setTextColor(...navy);
     doc.text(`${finding.area} (${finding.confidence} confidence)`, margin, y);
     y += 6;
     addParagraph(finding.condition);
@@ -358,7 +374,7 @@ function exportReportPdf(report: OptimizationReport) {
     y = ensurePdfSpace(doc, y, 24);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(11);
-    doc.setTextColor(15, 23, 42);
+    doc.setTextColor(...navy);
     doc.text(`${improvement.area} - ${improvement.priority} Priority`, margin, y);
     y += 6;
     addParagraph(improvement.recommendation);
