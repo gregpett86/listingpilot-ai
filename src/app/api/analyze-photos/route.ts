@@ -34,6 +34,10 @@ type OpenAIResponse = {
   output_text?: string;
 };
 
+type VisionAnalysisJson = {
+  findings?: Partial<VisionFinding>[];
+};
+
 const responseSchema = {
   type: "object",
   additionalProperties: false,
@@ -128,17 +132,49 @@ export async function POST(request: Request) {
   const apiKey = process.env.OPENAI_API_KEY;
 
   if (!apiKey) {
+    console.error("[ListingPilot Vision] Missing OPENAI_API_KEY");
+
     return NextResponse.json(
-      { error: "OPENAI_API_KEY is not configured." },
+      {
+        error: "OPENAI_API_KEY is not configured.",
+        errorType: "missing_api_key",
+      },
       { status: 500 },
     );
   }
 
-  const body = (await request.json()) as { photos?: AnalyzePhotoInput[] };
+  let body: { photos?: AnalyzePhotoInput[] };
+
+  try {
+    body = (await request.json()) as { photos?: AnalyzePhotoInput[] };
+  } catch (error) {
+    console.error("[ListingPilot Vision] Request JSON parsing failed", error);
+
+    return NextResponse.json(
+      {
+        error: "Vision request JSON could not be parsed.",
+        errorType: "image_processing_failure",
+      },
+      { status: 400 },
+    );
+  }
+
   const photos = body.photos?.slice(0, 30) ?? [];
+  const model = process.env.OPENAI_VISION_MODEL ?? "gpt-4.1-mini";
+
+  console.log("[ListingPilot Vision] Request received", {
+    model,
+    requestedPhotoCount: photos.length,
+    photoNames: photos.map((photo) => photo.name),
+  });
 
   if (photos.length === 0) {
-    return NextResponse.json({ findings: [] });
+    return NextResponse.json({
+      findings: [],
+      rawVisionJson: { findings: [] },
+      model,
+      requestedPhotoCount: 0,
+    });
   }
 
   const content = [
@@ -167,44 +203,96 @@ Each image is labeled with its photoId immediately before the image. Copy that e
     ]),
   ];
 
-  const response = await fetch("https://api.openai.com/v1/responses", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: process.env.OPENAI_VISION_MODEL ?? "gpt-4.1-mini",
-      input: [
-        {
-          role: "user",
-          content,
-        },
-      ],
-      text: {
-        format: {
-          type: "json_schema",
-          name: "listingpilot_photo_analysis",
-          schema: responseSchema,
-          strict: true,
-        },
+  let response: Response;
+
+  try {
+    console.log("[ListingPilot Vision] OpenAI request status", {
+      status: "started",
+      model,
+      photoCount: photos.length,
+    });
+
+    response = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
       },
-    }),
-  });
+      body: JSON.stringify({
+        model,
+        input: [
+          {
+            role: "user",
+            content,
+          },
+        ],
+        text: {
+          format: {
+            type: "json_schema",
+            name: "listingpilot_photo_analysis",
+            schema: responseSchema,
+            strict: true,
+          },
+        },
+      }),
+    });
+
+    console.log("[ListingPilot Vision] OpenAI response status", {
+      status: response.status,
+      ok: response.ok,
+    });
+  } catch (error) {
+    console.error("[ListingPilot Vision] OpenAI request failed", error);
+
+    return NextResponse.json(
+      {
+        error: "OpenAI Vision request failed before a response was returned.",
+        errorType: "api_request_failure",
+        detail: error instanceof Error ? error.message : String(error),
+      },
+      { status: 502 },
+    );
+  }
 
   if (!response.ok) {
     const errorText = await response.text();
+    const errorType =
+      response.status === 429 ? "rate_limit_issue" : "api_request_failure";
+
+    console.error("[ListingPilot Vision] OpenAI response failed", {
+      status: response.status,
+      errorType,
+      detail: errorText,
+    });
+
     return NextResponse.json(
-      { error: "OpenAI Vision analysis failed.", detail: errorText },
+      { error: "OpenAI Vision analysis failed.", errorType, detail: errorText },
       { status: response.status },
     );
   }
 
   const data = (await response.json()) as OpenAIResponse;
   const outputText = extractOutputText(data);
-  const parsed = JSON.parse(outputText) as {
-    findings?: Partial<VisionFinding>[];
-  };
+  let parsed: VisionAnalysisJson;
+
+  try {
+    parsed = JSON.parse(outputText) as VisionAnalysisJson;
+  } catch (error) {
+    console.error("[ListingPilot Vision] Structured JSON parsing failed", {
+      error,
+      outputText,
+    });
+
+    return NextResponse.json(
+      {
+        error: "OpenAI Vision JSON response could not be parsed.",
+        errorType: "json_parsing_failure",
+        rawOutputText: outputText,
+      },
+      { status: 502 },
+    );
+  }
+
   const findingsByPhotoId = new Map(
     parsed.findings?.map((finding) => [finding.photoId, finding]) ?? [],
   );
@@ -215,5 +303,17 @@ Each image is labeled with its photoId immediately before the image. Copy that e
     ),
   );
 
-  return NextResponse.json({ findings });
+  console.log("[ListingPilot Vision] Response parsed", {
+    returnedFindingCount: findings.length,
+    findings,
+  });
+  console.log("[ListingPilot Vision] Parsed JSON result", parsed);
+
+  return NextResponse.json({
+    findings,
+    rawVisionJson: parsed,
+    rawOutputText: outputText,
+    model,
+    requestedPhotoCount: photos.length,
+  });
 }

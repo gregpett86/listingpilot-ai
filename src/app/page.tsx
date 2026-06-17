@@ -80,6 +80,22 @@ type VisionFinding = {
   opportunities: string[];
 };
 
+type VisionAnalysisResponse = {
+  findings: VisionFinding[];
+  rawVisionJson?: unknown;
+  rawOutputText?: string;
+  model?: string;
+  requestedPhotoCount?: number;
+  error?: string;
+  errorType?:
+    | "missing_api_key"
+    | "api_request_failure"
+    | "image_processing_failure"
+    | "json_parsing_failure"
+    | "rate_limit_issue";
+  detail?: string;
+};
+
 const conditionSeverity: Record<PropertyCondition, number> = {
   Excellent: 1,
   Good: 2,
@@ -459,6 +475,8 @@ export default function Home() {
   const [analysisConfidence, setAnalysisConfidence] =
     useState<ConfidenceLevel>("Low");
   const [analysisError, setAnalysisError] = useState("");
+  const [visionDebugResponse, setVisionDebugResponse] =
+    useState<VisionAnalysisResponse | null>(null);
   const [report, setReport] = useState<OptimizationReport | null>(null);
 
   const photoCounts = useMemo(
@@ -469,6 +487,41 @@ export default function Home() {
       })),
     [photos],
   );
+  const visionFindingsByPhotoId = useMemo(
+    () =>
+      new Map(
+        visionDebugResponse?.findings.map((finding) => [
+          finding.photoId,
+          finding,
+        ]) ?? [],
+      ),
+    [visionDebugResponse],
+  );
+  const visionValidationFlags = useMemo(() => {
+    if (!visionDebugResponse) {
+      return [];
+    }
+
+    return photos.flatMap((photo) => {
+      const finding = visionFindingsByPhotoId.get(photo.id);
+
+      if (!finding) {
+        return [`${photo.name}: no Vision finding was returned.`];
+      }
+
+      const flags = [];
+
+      if (finding.confidence === "Low") {
+        flags.push(`${photo.name}: low-confidence classification.`);
+      }
+
+      if (finding.opportunities.length === 0) {
+        flags.push(`${photo.name}: no visible opportunities returned.`);
+      }
+
+      return flags;
+    });
+  }, [photos, visionDebugResponse, visionFindingsByPhotoId]);
 
   function resetAnalysisState() {
     setFindings([]);
@@ -476,17 +529,31 @@ export default function Home() {
     setReadinessScore(null);
     setAnalysisConfidence("Low");
     setAnalysisError("");
+    setVisionDebugResponse(null);
     setReport(null);
   }
 
   function appendPhotoFiles(files: File[]) {
+    console.groupCollapsed("[ListingPilot upload] appendPhotoFiles");
+    console.log("incoming files", files.length, files.map((file) => file.name));
+    console.log("photos before append", photos.length);
+
     const imageFiles = files.filter((file) => file.type.startsWith("image/"));
+    console.log(
+      "image files",
+      imageFiles.length,
+      imageFiles.map((file) => file.name),
+    );
 
     if (imageFiles.length === 0) {
+      console.log("no image files found; upload queue unchanged");
+      console.groupEnd();
       return;
     }
 
     if (photos.length >= 30) {
+      console.log("photo queue already at 30; upload queue unchanged");
+      console.groupEnd();
       return;
     }
 
@@ -508,26 +575,44 @@ export default function Home() {
           matchedKeywords: [],
           file,
         }));
+      const appendedPhotos = nextPhotos.map((photo, index) => ({
+        ...photo,
+        id: `${photo.id}-${uploadBatchId}-${currentPhotos.length + index}`,
+      }));
 
-      return [
-        ...currentPhotos,
-        ...nextPhotos.map((photo, index) => ({
-          ...photo,
-          id: `${photo.id}-${uploadBatchId}-${currentPhotos.length + index}`,
-        })),
-      ];
+      console.log("current photos in updater", currentPhotos.length);
+      console.log("remaining slots", remainingSlots);
+      console.log("appending photos", appendedPhotos.length);
+      console.log("next queue size", currentPhotos.length + appendedPhotos.length);
+
+      return [...currentPhotos, ...appendedPhotos];
     });
     resetAnalysisState();
+    console.groupEnd();
   }
 
   function handlePhotoUpload(event: ChangeEvent<HTMLInputElement>) {
-    appendPhotoFiles(Array.from(event.target.files ?? []));
+    const selectedFiles = Array.from(event.target.files ?? []);
+
+    console.log(
+      "[ListingPilot upload] file input change",
+      selectedFiles.length,
+      selectedFiles.map((file) => file.name),
+    );
+    appendPhotoFiles(selectedFiles);
     event.target.value = "";
   }
 
   function handlePhotoDrop(event: DragEvent<HTMLLabelElement>) {
     event.preventDefault();
-    appendPhotoFiles(Array.from(event.dataTransfer.files));
+    const droppedFiles = Array.from(event.dataTransfer.files);
+
+    console.log(
+      "[ListingPilot upload] drop",
+      droppedFiles.length,
+      droppedFiles.map((file) => file.name),
+    );
+    appendPhotoFiles(droppedFiles);
   }
 
   function updatePhotoArea(photoId: string, area: RoomType) {
@@ -550,12 +635,15 @@ export default function Home() {
     setReadinessScore(null);
     setAnalysisConfidence("Low");
     setAnalysisError("");
+    setVisionDebugResponse(null);
     setReport(null);
   }
 
   async function analyzePhotos() {
     setIsAnalyzing(true);
     setAnalysisError("");
+    setVisionDebugResponse(null);
+    let visionLogOpen = false;
 
     try {
       const payloadPhotos = await Promise.all(
@@ -565,21 +653,40 @@ export default function Home() {
           dataUrl: await fileToDataUrl(photo.file),
         })),
       );
+
+      console.groupCollapsed("[ListingPilot Vision] analyzePhotos");
+      console.log("calling /api/analyze-photos", {
+        photoCount: payloadPhotos.length,
+        photoIds: payloadPhotos.map((photo) => photo.id),
+        photoNames: payloadPhotos.map((photo) => photo.name),
+      });
+      visionLogOpen = true;
+
       const response = await fetch("/api/analyze-photos", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ photos: payloadPhotos }),
       });
 
+      console.log("Vision route response status", response.status);
+
       if (!response.ok) {
-        const errorBody = (await response.json().catch(() => null)) as {
-          error?: string;
-        } | null;
+        const errorBody = (await response.json().catch(() => null)) as
+          | VisionAnalysisResponse
+          | null;
+
+        console.error("Vision route error", errorBody);
+        setVisionDebugResponse(errorBody);
 
         throw new Error(errorBody?.error ?? "AI Vision analysis failed.");
       }
 
-      const result = (await response.json()) as { findings: VisionFinding[] };
+      const result = (await response.json()) as VisionAnalysisResponse;
+      console.log("Vision route JSON", result);
+      console.groupEnd();
+      visionLogOpen = false;
+      setVisionDebugResponse(result);
+
       const visionFindings = result.findings;
       const confidenceByPhotoId = new Map(
         visionFindings.map((finding) => [
@@ -641,6 +748,9 @@ export default function Home() {
           ? error.message
           : "AI Vision analysis could not be completed.",
       );
+      if (visionLogOpen) {
+        console.groupEnd();
+      }
     } finally {
       setIsAnalyzing(false);
     }
@@ -878,6 +988,171 @@ export default function Home() {
                   </div>
                 )}
               </SectionCard>
+
+              {(visionDebugResponse || analysisError) && (
+                <SectionCard>
+                  <div>
+                    <p className="label-caps text-[#B45309]">
+                      Vision Validation Debug
+                    </p>
+                    <h2 className="mt-2 text-base font-bold text-[#111827]">
+                      OpenAI Vision Response
+                    </h2>
+                    <p className="mt-1 text-sm leading-6 text-[#6B7280]">
+                      Temporary validation panel for comparing uploaded photos
+                      against detected room type, condition, confidence, and
+                      opportunities.
+                    </p>
+                  </div>
+
+                  {visionDebugResponse?.error && (
+                    <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-4">
+                      <p className="text-sm font-extrabold text-red-700">
+                        {visionDebugResponse.errorType ?? "vision_error"}
+                      </p>
+                      <p className="mt-2 text-sm leading-6 text-red-700">
+                        {visionDebugResponse.error}
+                      </p>
+                      {visionDebugResponse.detail && (
+                        <pre className="mt-3 max-h-44 overflow-auto rounded-lg bg-white p-3 text-xs text-red-700">
+                          {visionDebugResponse.detail}
+                        </pre>
+                      )}
+                    </div>
+                  )}
+
+                  {visionDebugResponse && !visionDebugResponse.error && (
+                    <>
+                      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                        <MetricCard
+                          label="Route"
+                          value={
+                            visionDebugResponse.findings.length > 0
+                              ? "Called"
+                              : "No Results"
+                          }
+                        />
+                        <MetricCard
+                          label="Model"
+                          value={visionDebugResponse.model ?? "Unknown"}
+                        />
+                        <MetricCard
+                          label="Photos"
+                          value={
+                            visionDebugResponse.requestedPhotoCount ??
+                            photos.length
+                          }
+                        />
+                      </div>
+
+                      <div className="mt-5 space-y-4">
+                        {photos.map((photo) => {
+                          const finding = visionFindingsByPhotoId.get(photo.id);
+
+                          return (
+                            <article
+                              className="grid gap-4 rounded-xl border border-[#E5E7EB] p-4 md:grid-cols-[120px_1fr]"
+                              key={`vision-debug-${photo.id}`}
+                            >
+                              <div className="overflow-hidden rounded-lg bg-[#F3F4F6]">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  alt={photo.name}
+                                  className="aspect-[4/3] h-full w-full object-cover"
+                                  src={photo.url}
+                                />
+                              </div>
+                              <div>
+                                <p className="truncate text-sm font-bold text-[#111827]">
+                                  {photo.name}
+                                </p>
+                                {finding ? (
+                                  <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
+                                    <div>
+                                      <dt className="label-caps">Room Type</dt>
+                                      <dd className="mt-1 font-bold text-[#111827]">
+                                        {finding.roomType}
+                                      </dd>
+                                    </div>
+                                    <div>
+                                      <dt className="label-caps">Condition</dt>
+                                      <dd className="mt-1 font-bold text-[#111827]">
+                                        {finding.condition}
+                                      </dd>
+                                    </div>
+                                    <div>
+                                      <dt className="label-caps">Confidence</dt>
+                                      <dd className="mt-1">
+                                        <ConfidenceBadge
+                                          confidence={finding.confidence}
+                                        />
+                                      </dd>
+                                    </div>
+                                    <div>
+                                      <dt className="label-caps">
+                                        Opportunities
+                                      </dt>
+                                      <dd className="mt-1 text-[#6B7280]">
+                                        {finding.opportunities.length
+                                          ? finding.opportunities.join(", ")
+                                          : "None returned"}
+                                      </dd>
+                                    </div>
+                                  </dl>
+                                ) : (
+                                  <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
+                                    No Vision result returned for this image.
+                                  </p>
+                                )}
+                              </div>
+                            </article>
+                          );
+                        })}
+                      </div>
+
+                      <div className="mt-5 rounded-xl border border-[#E5E7EB] bg-[#F9FAFB] p-4">
+                        <h3 className="text-sm font-bold text-[#111827]">
+                          Vision Validation Report
+                        </h3>
+                        <div className="mt-3 space-y-3 text-sm leading-6 text-[#6B7280]">
+                          <p>
+                            Accuracy observations: compare each uploaded photo
+                            preview above against the detected room type and
+                            condition. Automated correctness scoring requires a
+                            human-labeled expected value for each image.
+                          </p>
+                          <p>
+                            Confidence issues:{" "}
+                            {visionValidationFlags.length
+                              ? visionValidationFlags.join(" ")
+                              : "No low-confidence or missing-result flags were detected in the returned JSON."}
+                          </p>
+                          <p>
+                            Recommendation quality issues: opportunities should
+                            be visible, photo-specific, and limited to property
+                            presentation improvements. Generic or non-visible
+                            opportunities should be treated as weak or
+                            hallucinated.
+                          </p>
+                          <p>
+                            Prompt weaknesses to watch: room ambiguity, overly
+                            broad condition labels, opportunities not grounded
+                            in the image, and confidence that does not decrease
+                            for unclear photos.
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="mt-5">
+                        <p className="label-caps">Raw Vision JSON</p>
+                        <pre className="mt-3 max-h-96 overflow-auto rounded-xl border border-[#E5E7EB] bg-[#111827] p-4 text-xs leading-5 text-white">
+                          {JSON.stringify(visionDebugResponse, null, 2)}
+                        </pre>
+                      </div>
+                    </>
+                  )}
+                </SectionCard>
+              )}
 
               {readinessScore && (
                 <SectionCard>
