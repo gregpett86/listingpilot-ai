@@ -206,6 +206,12 @@ Each image is labeled with its photoId immediately before the image. Copy that e
   let response: Response;
 
   try {
+    console.log("[ListingPilot Vision] OpenAI request status", {
+      status: "started",
+      model,
+      photoCount: photos.length,
+    });
+
     response = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
       headers: {
@@ -229,6 +235,11 @@ Each image is labeled with its photoId immediately before the image. Copy that e
           },
         },
       }),
+    });
+
+    console.log("[ListingPilot Vision] OpenAI response status", {
+      status: response.status,
+      ok: response.ok,
     });
   } catch (error) {
     console.error("[ListingPilot Vision] OpenAI request failed", error);
@@ -296,6 +307,7 @@ Each image is labeled with its photoId immediately before the image. Copy that e
     returnedFindingCount: findings.length,
     findings,
   });
+  console.log("[ListingPilot Vision] Parsed JSON result", parsed);
 
   return NextResponse.json({
     findings,
