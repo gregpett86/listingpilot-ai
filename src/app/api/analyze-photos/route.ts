@@ -128,12 +128,6 @@ function normalizeFinding(
   };
 }
 
-export function GET() {
-  return NextResponse.json({
-    hasApiKey: Boolean(process.env.OPENAI_API_KEY),
-  });
-}
-
 export async function POST(request: Request) {
   const apiKey = process.env.OPENAI_API_KEY;
 
