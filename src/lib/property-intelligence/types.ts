@@ -1,9 +1,8 @@
 export const ROOM_TYPES = [
   "Kitchen",
   "Bathroom",
-  "Bedroom",
   "Living Room",
-  "Dining Room",
+  "Bedroom",
   "Exterior",
   "Landscaping",
   "Garage",
@@ -52,10 +51,25 @@ export type PropertyConditionObservation = {
 
 export type RecommendationPriority = "High" | "Medium" | "Low";
 
+export type PropertyReadinessStatus =
+  | "Listing Ready"
+  | "Minor Improvements Recommended"
+  | "Significant Opportunity"
+  | "Needs Review";
+
 export type ImprovementRecommendation = {
   improvement: ImprovementRecord;
   priority: RecommendationPriority;
   priorityScore: number;
   reasons: string[];
   sellerTalkingPoints: string[];
+};
+
+export type PropertyReadinessScore = {
+  score: number;
+  status: PropertyReadinessStatus;
+  summary: string;
+  highPriorityCount: number;
+  mediumPriorityCount: number;
+  lowPriorityCount: number;
 };

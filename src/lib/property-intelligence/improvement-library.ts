@@ -36,6 +36,7 @@ const roomSeeds: Record<RoomType, ImprovementSeed[]> = {
     seed("Island surface staging", "Stage the island or breakfast bar with restrained, useful visual cues.", [150, 600], [800, 2500], "Medium", 44, ["A staged island helps buyers imagine daily use."]),
     seed("Flooring touch-up", "Repair visible flooring scratches, chipped tiles, or transition strips.", [500, 3500], [1800, 7000], "Medium", 68, ["Buyers often read floor wear as overall maintenance risk."]),
     seed("Wall paint refresh", "Apply a neutral paint refresh around the kitchen and eating area.", [500, 2200], [1800, 6500], "High", 66, ["Fresh paint keeps the room from feeling tired before showings."]),
+    seed("Sink basin replacement", "Replace a scratched, stained, or dated sink basin with a clean neutral option.", [500, 2200], [1800, 6500], "Medium", 60, ["A clean sink area helps the whole kitchen feel fresher."]),
   ],
   Bathroom: [
     seed("Caulk and grout renewal", "Replace stained caulk and clean or refresh grout in wet areas.", [200, 900], [1000, 4000], "High", 86, ["Crisp grout and caulk reduce buyer concerns about moisture."]),
@@ -50,6 +51,7 @@ const roomSeeds: Record<RoomType, ImprovementSeed[]> = {
     seed("Exhaust fan replacement", "Replace noisy or ineffective exhaust fans.", [300, 1000], [700, 2500], "Medium", 48, ["Good ventilation reassures buyers about long-term care."]),
     seed("Linen staging", "Use clean towels, bath mats, and minimal counter accessories.", [100, 400], [500, 1800], "Medium", 38, ["Simple staging makes the bathroom feel move-in ready."]),
     seed("Tile repair", "Repair cracked, loose, or missing tile before listing photos.", [400, 3000], [1500, 6500], "Medium", 78, ["Visible tile problems can trigger negotiation pressure."]),
+    seed("Shower head replacement", "Replace older or mineral-stained shower heads with clean current fixtures.", [120, 600], [500, 2000], "High", 46, ["A fresh shower fixture is a small detail that supports a cleaner presentation."]),
   ],
   Bedroom: [
     seed("Neutral paint refresh", "Repaint bedrooms with a calm neutral color and clean trim lines.", [500, 1800], [1500, 5500], "High", 68, ["Fresh paint helps bedrooms feel calm and move-in ready."]),
@@ -79,20 +81,6 @@ const roomSeeds: Record<RoomType, ImprovementSeed[]> = {
     seed("Ceiling repair", "Address visible stains, cracks, or texture damage.", [500, 3000], [1500, 7000], "Medium", 74, ["Ceiling issues can create avoidable buyer concern."]),
     seed("Traffic flow staging", "Arrange seating to show clear paths through the room.", [0, 600], [800, 3000], "High", 44, ["Better flow helps buyers feel comfortable during walkthroughs."]),
   ],
-  "Dining Room": [
-    seed("Lighting fixture replacement", "Replace dated chandeliers or off-scale dining fixtures.", [350, 2200], [1200, 6000], "High", 66, ["Dining lighting is a prominent photo focal point."]),
-    seed("Table scale staging", "Use a correctly scaled table and reduce excess chairs.", [0, 900], [700, 3000], "Medium", 36, ["Right-sized furniture helps the room feel usable."]),
-    seed("Wall paint refresh", "Repaint bold or worn dining room walls in a neutral tone.", [500, 1800], [1500, 5500], "High", 60, ["Neutral dining rooms appeal to more buyer styles."]),
-    seed("Trim detail touch-up", "Refresh chair rail, crown, or baseboard paint.", [300, 1600], [900, 3500], "Medium", 48, ["Clean trim helps formal spaces feel polished."]),
-    seed("Window treatment update", "Replace heavy curtains with simpler panels or shades.", [300, 1800], [900, 3800], "Medium", 42, ["Lighter window treatments make dining areas feel brighter."]),
-    seed("Floor polish", "Clean, polish, or repair dining room flooring.", [250, 2500], [1000, 5500], "Medium", 54, ["Dining rooms often show floor wear around furniture."]),
-    seed("Buffet or storage staging", "Edit sideboards and surfaces to reduce visual clutter.", [0, 500], [500, 2000], "Medium", 30, ["Clear surfaces help the room feel more spacious."]),
-    seed("Accent wall simplification", "Remove dated wallpaper or overly personal accent treatments.", [600, 3500], [1800, 7000], "Medium", 68, ["Simplifying finishes keeps buyers focused on the home."]),
-    seed("Outlet and switch plate refresh", "Replace yellowed or mismatched plates.", [80, 400], [300, 1200], "High", 30, ["Small details can make the room look cleaner in person."]),
-    seed("Ceiling medallion removal or update", "Remove or modernize dated ceiling medallions.", [150, 900], [500, 2000], "Low", 28, ["Updating ornamental details can modernize the dining room."]),
-    seed("Artwork editing", "Use fewer, larger neutral pieces for photography.", [0, 700], [400, 1800], "Low", 24, ["Simple art helps buyers imagine their own style."]),
-    seed("Doorway sight-line cleanup", "Remove visible clutter from adjacent spaces seen from dining photos.", [0, 500], [500, 2000], "Medium", 34, ["Clean sight lines make the floor plan feel more connected."]),
-  ],
   Exterior: [
     seed("Power washing", "Clean siding, walkways, driveway, porch, and exterior touchpoints.", [250, 1200], [1500, 6000], "High", 86, ["A clean exterior immediately improves buyer confidence."]),
     seed("Front door paint", "Repaint or refinish the front door in a polished, brand-safe color.", [250, 900], [1200, 5000], "High", 74, ["The front door anchors curb appeal and listing photos."]),
@@ -106,6 +94,7 @@ const roomSeeds: Record<RoomType, ImprovementSeed[]> = {
     seed("Roof debris removal", "Remove leaves, moss, or visible roof debris where safe.", [250, 1500], [1000, 5000], "Medium", 64, ["A cleaner roofline reduces buyer concern before inspection."]),
     seed("Mailbox refresh", "Replace or repaint a worn mailbox.", [80, 500], [300, 1500], "Medium", 26, ["Small curb details reinforce overall care."]),
     seed("Window trim cleanup", "Clean or touch up exterior window trim and shutters.", [300, 2500], [1200, 6000], "Medium", 58, ["Clean window trim sharpens the exterior photo."]),
+    seed("Entry hardware replacement", "Replace worn front entry hardware, locksets, or kick plates.", [200, 1200], [800, 3500], "High", 54, ["Fresh entry hardware reinforces a polished first impression."]),
   ],
   Landscaping: [
     seed("Fresh mulch", "Add fresh mulch to visible beds and entry areas.", [200, 1200], [1000, 4500], "High", 74, ["Fresh mulch gives the property an immediate cared-for look."]),
@@ -148,6 +137,7 @@ const roomSeeds: Record<RoomType, ImprovementSeed[]> = {
     seed("Egress window cleaning", "Clean and clear egress windows and wells.", [150, 900], [600, 2800], "Medium", 42, ["Clear egress areas help the basement feel safer and brighter."]),
     seed("Odor remediation", "Address musty odors with cleaning, ventilation, or source repair.", [300, 3000], [1200, 7000], "High", 82, ["Odor is one of the fastest ways to create buyer hesitation."]),
     seed("Functional zone staging", "Define a gym, media, storage, or flex zone with simple staging.", [250, 1800], [900, 4500], "Low", 34, ["Defined zones help buyers understand basement potential."]),
+    seed("Foundation crack review", "Review and repair visible foundation cracks or settlement indicators.", [500, 5000], [2000, 12000], "Medium", 88, ["Addressing visible foundation concerns can reduce buyer uncertainty."]),
   ],
 };
 

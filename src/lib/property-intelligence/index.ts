@@ -10,6 +10,7 @@ export {
   isSupportedRoomType,
   type RoomClassificationResult,
 } from "./room-classification";
+export { calculatePropertyReadinessScore } from "./readiness-score";
 export { recommendImprovements } from "./recommendation-engine";
 export { buildSellerTalkingPoints } from "./seller-talking-points";
 export {
@@ -22,6 +23,8 @@ export {
   type ImprovementRecord,
   type PropertyCondition,
   type PropertyConditionObservation,
+  type PropertyReadinessScore,
+  type PropertyReadinessStatus,
   type RecommendationPriority,
   type RoomType,
 } from "./types";

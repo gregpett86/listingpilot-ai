@@ -3,9 +3,8 @@ import { ROOM_TYPES, RoomType } from "./types";
 const roomKeywords: Record<RoomType, string[]> = {
   Kitchen: ["kitchen", "cabinet", "counter", "island", "pantry", "appliance"],
   Bathroom: ["bath", "bathroom", "shower", "tub", "vanity", "toilet"],
-  Bedroom: ["bed", "bedroom", "primary", "closet", "suite"],
   "Living Room": ["living", "family", "den", "great-room", "fireplace"],
-  "Dining Room": ["dining", "breakfast", "eat-in", "table"],
+  Bedroom: ["bed", "bedroom", "primary", "closet", "suite"],
   Exterior: ["exterior", "front", "porch", "entry", "siding", "roof"],
   Landscaping: ["landscape", "yard", "lawn", "garden", "mulch", "patio"],
   Garage: ["garage", "driveway", "carport", "opener"],
