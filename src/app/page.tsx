@@ -12,42 +12,54 @@ import {
   SectionCard,
   StepCard,
 } from "@/components/listing-pilot-ui";
-
-type PropertyArea =
-  | "Kitchen"
-  | "Bathrooms"
-  | "Living Areas"
-  | "Bedrooms"
-  | "Exterior"
-  | "Landscaping";
-
-type Confidence = "High" | "Medium" | "Low";
+import {
+  ROOM_TYPES,
+  calculatePropertyReadinessScore,
+  classifyRoomFromText,
+  createConditionObservation,
+  recommendImprovements,
+  type ConfidenceLevel,
+  type CostRange,
+  type ImprovementRecommendation,
+  type PropertyCondition,
+  type PropertyConditionObservation,
+  type PropertyReadinessScore,
+  type RecommendationPriority,
+  type RoomType,
+} from "@/lib/property-intelligence";
 
 type PhotoItem = {
   id: string;
   name: string;
   url: string;
   size: number;
-  area: PropertyArea;
+  area: RoomType;
+  classificationConfidence: number;
+  matchedKeywords: string[];
 };
 
 type AreaFinding = {
-  area: PropertyArea;
+  area: RoomType;
   condition: string;
   recommendations: string[];
   sellerTalkingPoints: string[];
-  confidence: Confidence;
+  confidence: ConfidenceLevel;
 };
 
 type ImprovementPlan = {
-  area: PropertyArea;
-  priority: "High" | "Medium";
+  area: RoomType;
+  priority: RecommendationPriority;
   recommendation: string;
   estimatedCost: string;
   potentialAddedValue: string;
 };
 
 type OptimizationReport = {
+  readinessScore: PropertyReadinessScore;
+  confidenceLevel: ConfidenceLevel;
+  recommendedInvestmentRange: string;
+  potentialAddedSaleValueRange: string;
+  topOpportunities: ImprovementRecommendation[];
   propertySummary: string;
   marketValue: string;
   findings: AreaFinding[];
@@ -58,183 +70,216 @@ type OptimizationReport = {
   nextSteps: string[];
 };
 
-const propertyAreas: PropertyArea[] = [
-  "Kitchen",
-  "Bathrooms",
-  "Living Areas",
-  "Bedrooms",
-  "Exterior",
-  "Landscaping",
-];
-
-const improvementRanges: Record<
-  PropertyArea,
-  Pick<ImprovementPlan, "estimatedCost" | "potentialAddedValue">
-> = {
-  Kitchen: {
-    estimatedCost: "$750 - $4,500",
-    potentialAddedValue: "$3,000 - $12,000",
-  },
-  Bathrooms: {
-    estimatedCost: "$500 - $3,500",
-    potentialAddedValue: "$2,000 - $9,000",
-  },
-  "Living Areas": {
-    estimatedCost: "$300 - $2,500",
-    potentialAddedValue: "$1,500 - $6,500",
-  },
-  Bedrooms: {
-    estimatedCost: "$250 - $1,800",
-    potentialAddedValue: "$1,000 - $4,000",
-  },
-  Exterior: {
-    estimatedCost: "$600 - $5,000",
-    potentialAddedValue: "$3,000 - $14,000",
-  },
-  Landscaping: {
-    estimatedCost: "$350 - $3,000",
-    potentialAddedValue: "$2,000 - $8,000",
-  },
-};
-
-const analysisCopy: Record<PropertyArea, Omit<AreaFinding, "area" | "confidence">> = {
-  Kitchen: {
-    condition:
-      "Core buyer-facing surfaces look serviceable, but cabinet tone, counters, hardware, and lighting should be reviewed closely before photography.",
-    recommendations: [
-      "Refresh cabinet pulls and visible fixtures for a low-cost modernization pass.",
-      "Clear counters and add warm task lighting before listing photos.",
-      "Consider painting dated cabinetry if the finish reads heavy in photos.",
-    ],
-    sellerTalkingPoints: [
-      "Small kitchen updates can improve first impressions without a full remodel.",
-      "Staging the kitchen around light, clean surfaces helps buyers picture daily use.",
-    ],
-  },
-  Bathrooms: {
-    condition:
-      "Bathrooms appear to be functional spaces where cleanliness, caulk lines, mirrors, and fixture finish will drive perceived condition.",
-    recommendations: [
-      "Replace worn caulk, grout discoloration, and mismatched towel hardware.",
-      "Use brighter bulbs and simple neutral linens for showing day consistency.",
-      "Prioritize vanity hardware or faucet swaps over larger construction.",
-    ],
-    sellerTalkingPoints: [
-      "Buyers often price bathroom wear emotionally, so small polish matters.",
-      "A crisp bathroom presentation can reduce inspection anxiety.",
-    ],
-  },
-  "Living Areas": {
-    condition:
-      "Shared spaces should be positioned around openness, natural light, and traffic flow. Furniture density will shape buyer perception.",
-    recommendations: [
-      "Remove oversized furniture to widen walking paths and sight lines.",
-      "Patch wall scuffs and use one neutral accent texture to add warmth.",
-      "Stage the main seating area to point toward the strongest focal feature.",
-    ],
-    sellerTalkingPoints: [
-      "The goal is to make the home feel larger in listing photos and walkthroughs.",
-      "Neutral, open living spaces help buyers project their own furniture into the room.",
-    ],
-  },
-  Bedrooms: {
-    condition:
-      "Bedrooms should read calm, uncluttered, and proportional. Closet presentation and textile choices will influence perceived storage.",
-    recommendations: [
-      "Use simple bedding, matching lamps, and minimal surface decor.",
-      "Reduce closet contents before photography to suggest stronger storage.",
-      "Touch up baseboards and high-contact wall areas near beds and doors.",
-    ],
-    sellerTalkingPoints: [
-      "A calmer bedroom presentation supports the home's lifestyle story.",
-      "Organized closets quietly reinforce that the home has enough storage.",
-    ],
-  },
-  Exterior: {
-    condition:
-      "The exterior is the first trust signal. Entry condition, paint touch-ups, lighting, and walkway clarity should be reviewed before launch.",
-    recommendations: [
-      "Power wash walkways, siding touchpoints, and the entry approach.",
-      "Repaint or polish the front door hardware and house numbers.",
-      "Check exterior bulbs and remove visible storage from porches or side yards.",
-    ],
-    sellerTalkingPoints: [
-      "Curb appeal sets the emotional anchor before buyers enter the home.",
-      "A tidy entry can make the property feel better maintained overall.",
-    ],
-  },
-  Landscaping: {
-    condition:
-      "Landscaping should frame the home rather than distract from it. Edging, mulch, and seasonal color will deliver quick visual lift.",
-    recommendations: [
-      "Add fresh mulch and sharpen bed edges before photos.",
-      "Trim overgrowth around windows, paths, and the front elevation.",
-      "Use a few seasonal planters near the entry instead of broad planting work.",
-    ],
-    sellerTalkingPoints: [
-      "Simple landscaping cleanup can make online thumbnails more competitive.",
-      "A maintained yard suggests lower effort for the next owner.",
-    ],
-  },
-};
+const propertyAreas = [...ROOM_TYPES];
 
 function formatBytes(bytes: number) {
   const megabytes = bytes / 1024 / 1024;
   return `${megabytes.toFixed(megabytes >= 10 ? 0 : 1)} MB`;
 }
 
-function inferArea(fileName: string, index: number): PropertyArea {
-  const normalized = fileName.toLowerCase();
-  const keywordMatch = propertyAreas.find((area) => {
-    const areaWords = area.toLowerCase().split(" ");
-    return areaWords.some((word) => normalized.includes(word.replace(/s$/, "")));
-  });
-
-  return keywordMatch ?? propertyAreas[index % propertyAreas.length];
+function formatCurrencyRange(range: CostRange) {
+  return `$${range.min.toLocaleString()} - $${range.max.toLocaleString()}`;
 }
 
-function buildFindings(photos: PhotoItem[]): AreaFinding[] {
-  const coveredAreas = propertyAreas.filter((area) =>
-    photos.some((photo) => photo.area === area),
+function summarizeCurrencyRanges(ranges: CostRange[]) {
+  const totals = ranges.reduce(
+    (sum, range) => ({
+      min: sum.min + range.min,
+      max: sum.max + range.max,
+    }),
+    { min: 0, max: 0 },
   );
 
-  return coveredAreas.map((area) => {
-    const photoCount = photos.filter((photo) => photo.area === area).length;
-    const confidence: Confidence =
+  return formatCurrencyRange(totals);
+}
+
+function classifyPhoto(fileName: string, index: number) {
+  const classification = classifyRoomFromText(fileName);
+
+  if (classification.matchedKeywords.length > 0) {
+    return classification;
+  }
+
+  return {
+    ...classification,
+    roomType: propertyAreas[index % propertyAreas.length],
+  };
+}
+
+function detectObservedIssues(photos: PhotoItem[]) {
+  const issueMatchers = [
+    { keyword: "dated", issue: "dated finishes" },
+    { keyword: "old", issue: "dated finishes" },
+    { keyword: "worn", issue: "worn surfaces" },
+    { keyword: "damage", issue: "visible damage" },
+    { keyword: "repair", issue: "repair needs" },
+    { keyword: "stain", issue: "staining" },
+    { keyword: "crack", issue: "cracking" },
+    { keyword: "dark", issue: "low light" },
+    { keyword: "clutter", issue: "clutter" },
+  ];
+
+  const fileNames = photos.map((photo) => photo.name.toLowerCase()).join(" ");
+
+  return Array.from(
+    new Set(
+      issueMatchers
+        .filter(({ keyword }) => fileNames.includes(keyword))
+        .map(({ issue }) => issue),
+    ),
+  );
+}
+
+function conditionFromPhotoGroup(photos: PhotoItem[]): PropertyCondition {
+  const observedIssues = detectObservedIssues(photos);
+
+  if (
+    observedIssues.some((issue) =>
+      ["visible damage", "repair needs", "staining", "cracking"].includes(issue),
+    )
+  ) {
+    return "Needs Improvement";
+  }
+
+  if (
+    observedIssues.some((issue) =>
+      ["dated finishes", "worn surfaces", "low light", "clutter"].includes(
+        issue,
+      ),
+    )
+  ) {
+    return "Dated";
+  }
+
+  if (photos.length >= 6) return "Excellent";
+  if (photos.length >= 4) return "Good";
+  if (photos.length >= 2) return "Average";
+  return "Needs Improvement";
+}
+
+function confidenceFromPhotos(photos: PhotoItem[]) {
+  const averageConfidence =
+    photos.reduce(
+      (sum, photo) => sum + photo.classificationConfidence,
+      0,
+    ) / Math.max(photos.length, 1);
+
+  if (photos.length >= 20 && averageConfidence >= 0.5) return "High";
+  if (photos.length >= 10 || averageConfidence >= 0.45) return "Medium";
+  return "Low";
+}
+
+function buildObservations(photos: PhotoItem[]): PropertyConditionObservation[] {
+  return propertyAreas.flatMap((area) => {
+    const areaPhotos = photos.filter((photo) => photo.area === area);
+
+    if (areaPhotos.length === 0) {
+      return [];
+    }
+
+    const observedIssues = detectObservedIssues(areaPhotos);
+    const condition = conditionFromPhotoGroup(areaPhotos);
+
+    return [
+      createConditionObservation({
+        roomType: area,
+        condition,
+        photoCount: areaPhotos.length,
+        observedIssues,
+        notes: `${areaPhotos.length} uploaded photo${
+          areaPhotos.length === 1 ? "" : "s"
+        } reviewed for ${area.toLowerCase()} presentation readiness.`,
+      }),
+    ];
+  });
+}
+
+function buildFindings({
+  observations,
+  recommendations,
+}: {
+  observations: PropertyConditionObservation[];
+  recommendations: ImprovementRecommendation[];
+}): AreaFinding[] {
+  return observations.map((observation) => {
+    const roomRecommendations = recommendations.filter(
+      (recommendation) =>
+        recommendation.improvement.category === observation.roomType,
+    );
+    const photoCount = observation.photoCount ?? 0;
+    const confidence: ConfidenceLevel =
       photoCount >= 4 ? "High" : photoCount >= 2 ? "Medium" : "Low";
 
     return {
-      area,
+      area: observation.roomType,
       confidence,
-      ...analysisCopy[area],
+      condition: `${observation.roomType} is assessed as ${observation.condition.toLowerCase()} based on the current photo set. ${observation.notes}`,
+      recommendations: roomRecommendations
+        .slice(0, 3)
+        .map(
+          (recommendation) =>
+            recommendation.improvement.improvementName,
+        ),
+      sellerTalkingPoints:
+        roomRecommendations[0]?.sellerTalkingPoints.slice(0, 2) ??
+        [
+          `${observation.roomType} should be reviewed with the seller before photography.`,
+          "The recommendation plan should stay focused on visible buyer confidence signals.",
+        ],
     };
   });
 }
 
-function buildReport(findings: AreaFinding[], photos: PhotoItem[]): OptimizationReport {
+function buildReport({
+  confidenceLevel,
+  findings,
+  photos,
+  readinessScore,
+  recommendations,
+}: {
+  confidenceLevel: ConfidenceLevel;
+  findings: AreaFinding[];
+  photos: PhotoItem[];
+  readinessScore: PropertyReadinessScore;
+  recommendations: ImprovementRecommendation[];
+}): OptimizationReport {
   const strongestAreas = findings
     .filter((finding) => finding.confidence !== "Low")
     .map((finding) => finding.area);
+  const topOpportunities = recommendations.slice(0, 3);
+  const recommendedInvestmentRange = summarizeCurrencyRanges(
+    topOpportunities.map(
+      (recommendation) => recommendation.improvement.typicalCostRange,
+    ),
+  );
+  const potentialAddedSaleValueRange = summarizeCurrencyRanges(
+    topOpportunities.map(
+      (recommendation) =>
+        recommendation.improvement.potentialAddedSaleValueRange,
+    ),
+  );
 
-  const improvements: ImprovementPlan[] = findings.flatMap((finding, index) => {
-    const primaryRecommendation = finding.recommendations[0];
-    const priority: ImprovementPlan["priority"] =
-      index < 3 ? "High" : "Medium";
-
-    return primaryRecommendation
-      ? [
-          {
-            area: finding.area,
-            priority,
-            recommendation: primaryRecommendation,
-            ...improvementRanges[finding.area],
-          },
-        ]
-      : [];
-  });
+  const improvements: ImprovementPlan[] = recommendations
+    .slice(0, 8)
+    .map((recommendation) => ({
+      area: recommendation.improvement.category,
+      priority: recommendation.priority,
+      recommendation: recommendation.improvement.improvementName,
+      estimatedCost: formatCurrencyRange(
+        recommendation.improvement.typicalCostRange,
+      ),
+      potentialAddedValue: formatCurrencyRange(
+        recommendation.improvement.potentialAddedSaleValueRange,
+      ),
+    }));
 
   return {
-    propertySummary: `Analysis based on ${photos.length} uploaded photos across ${findings.length} property areas. ${
+    readinessScore,
+    confidenceLevel,
+    recommendedInvestmentRange,
+    potentialAddedSaleValueRange,
+    topOpportunities,
+    propertySummary: `Analysis based on ${photos.length} uploaded photos across ${findings.length} property areas. Readiness status: ${readinessScore.status} (${readinessScore.score}/100) with ${confidenceLevel.toLowerCase()} confidence. ${
       strongestAreas.length
         ? `The strongest coverage is in ${strongestAreas.join(", ")}.`
         : "Additional photos would improve confidence before a final seller presentation."
@@ -353,6 +398,20 @@ function exportReportPdf(report: OptimizationReport) {
   addSectionTitle("Property Summary");
   addParagraph(report.propertySummary);
 
+  addSectionTitle("Property Readiness");
+  addParagraph(
+    `${report.readinessScore.status}: ${report.readinessScore.summary}`,
+  );
+  addParagraph(
+    `Readiness Score: ${report.readinessScore.score}/100 | Confidence Level: ${report.confidenceLevel} | Recommended Investment Range: ${report.recommendedInvestmentRange} | Potential Added Sale Value Range: ${report.potentialAddedSaleValueRange}`,
+  );
+  addBulletList(
+    report.topOpportunities.map(
+      (recommendation) =>
+        `${recommendation.improvement.category}: ${recommendation.improvement.improvementName}`,
+    ),
+  );
+
   addSectionTitle("Current Market Value");
   addParagraph(report.marketValue);
 
@@ -399,6 +458,13 @@ export default function Home() {
   const [photos, setPhotos] = useState<PhotoItem[]>([]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [findings, setFindings] = useState<AreaFinding[]>([]);
+  const [recommendations, setRecommendations] = useState<
+    ImprovementRecommendation[]
+  >([]);
+  const [readinessScore, setReadinessScore] =
+    useState<PropertyReadinessScore | null>(null);
+  const [analysisConfidence, setAnalysisConfidence] =
+    useState<ConfidenceLevel>("Low");
   const [report, setReport] = useState<OptimizationReport | null>(null);
 
   const photoCounts = useMemo(
@@ -410,48 +476,93 @@ export default function Home() {
     [photos],
   );
 
-  const totalSize = useMemo(
-    () => photos.reduce((sum, photo) => sum + photo.size, 0),
-    [photos],
-  );
-
   function handlePhotoUpload(event: ChangeEvent<HTMLInputElement>) {
     const selectedFiles = Array.from(event.target.files ?? []).slice(0, 30);
-    const nextPhotos = selectedFiles.map((file, index) => ({
-      id: `${file.name}-${file.lastModified}-${index}`,
-      name: file.name,
-      url: URL.createObjectURL(file),
-      size: file.size,
-      area: inferArea(file.name, index),
-    }));
+    const nextPhotos = selectedFiles.map((file, index) => {
+      const classification = classifyPhoto(file.name, index);
+
+      return {
+        id: `${file.name}-${file.lastModified}-${index}`,
+        name: file.name,
+        url: URL.createObjectURL(file),
+        size: file.size,
+        area: classification.roomType,
+        classificationConfidence: classification.confidence,
+        matchedKeywords: classification.matchedKeywords,
+      };
+    });
 
     setPhotos(nextPhotos);
     setFindings([]);
+    setRecommendations([]);
+    setReadinessScore(null);
+    setAnalysisConfidence("Low");
     setReport(null);
     event.target.value = "";
   }
 
-  function updatePhotoArea(photoId: string, area: PropertyArea) {
+  function updatePhotoArea(photoId: string, area: RoomType) {
     setPhotos((currentPhotos) =>
       currentPhotos.map((photo) =>
-        photo.id === photoId ? { ...photo, area } : photo,
+        photo.id === photoId
+          ? {
+              ...photo,
+              area,
+              classificationConfidence: Math.max(
+                photo.classificationConfidence,
+                0.75,
+              ),
+            }
+          : photo,
       ),
     );
     setFindings([]);
+    setRecommendations([]);
+    setReadinessScore(null);
+    setAnalysisConfidence("Low");
     setReport(null);
   }
 
   function analyzePhotos() {
     setIsAnalyzing(true);
     window.setTimeout(() => {
-      setFindings(buildFindings(photos));
+      const nextObservations = buildObservations(photos);
+      const nextRecommendations = recommendImprovements({
+        observations: nextObservations,
+        limit: 12,
+      });
+      const nextReadinessScore = calculatePropertyReadinessScore({
+        observations: nextObservations,
+        recommendations: nextRecommendations,
+      });
+      const nextAnalysisConfidence = confidenceFromPhotos(photos);
+
+      setFindings(
+        buildFindings({
+          observations: nextObservations,
+          recommendations: nextRecommendations,
+        }),
+      );
+      setRecommendations(nextRecommendations);
+      setReadinessScore(nextReadinessScore);
+      setAnalysisConfidence(nextAnalysisConfidence);
       setReport(null);
       setIsAnalyzing(false);
     }, 900);
   }
 
   function createReport() {
-    setReport(buildReport(findings, photos));
+    if (!readinessScore) return;
+
+    setReport(
+      buildReport({
+        confidenceLevel: analysisConfidence,
+        findings,
+        photos,
+        readinessScore,
+        recommendations,
+      }),
+    );
   }
 
   const readyForAnalysis = photos.length >= 6;
@@ -467,10 +578,13 @@ export default function Home() {
               <div className="grid grid-cols-3 gap-3">
                 {[
                   { label: "Photos", value: photos.length },
-                  { label: "Findings", value: findings.length },
                   {
-                    label: "Uploaded",
-                    value: photos.length ? formatBytes(totalSize) : "0 MB",
+                    label: "Rooms",
+                    value: photoCounts.filter(({ count }) => count > 0).length,
+                  },
+                  {
+                    label: "Recs",
+                    value: recommendations.length,
                   },
                 ].map((metric) => (
                   <MetricCard
@@ -643,7 +757,7 @@ export default function Home() {
                             onChange={(event) =>
                               updatePhotoArea(
                                 photo.id,
-                                event.target.value as PropertyArea,
+                                event.target.value as RoomType,
                               )
                             }
                             value={photo.area}
@@ -660,6 +774,88 @@ export default function Home() {
                   </div>
                 )}
               </SectionCard>
+
+              {readinessScore && (
+                <SectionCard>
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="label-caps text-[#B45309]">
+                        Property Readiness
+                      </p>
+                      <h2 className="mt-2 text-base font-bold text-[#111827]">
+                        {readinessScore.status}
+                      </h2>
+                    </div>
+                    <ConfidenceBadge confidence={analysisConfidence} />
+                  </div>
+
+                  <p className="mt-3 text-sm leading-6 text-[#6B7280]">
+                    {readinessScore.summary}
+                  </p>
+
+                  <div className="mt-5 grid gap-3 sm:grid-cols-3">
+                    <MetricCard
+                      label="Readiness"
+                      value={`${readinessScore.score}/100`}
+                    />
+                    <MetricCard
+                      label="Investment"
+                      value={summarizeCurrencyRanges(
+                        recommendations
+                          .slice(0, 3)
+                          .map(
+                            (recommendation) =>
+                              recommendation.improvement.typicalCostRange,
+                          ),
+                      )}
+                    />
+                    <MetricCard
+                      label="Added Value"
+                      value={summarizeCurrencyRanges(
+                        recommendations
+                          .slice(0, 3)
+                          .map(
+                            (recommendation) =>
+                              recommendation.improvement
+                                .potentialAddedSaleValueRange,
+                          ),
+                      )}
+                    />
+                  </div>
+
+                  <div className="mt-5">
+                    <p className="label-caps">Top 3 Opportunities</p>
+                    <div className="mt-3 space-y-3">
+                      {recommendations.slice(0, 3).map((recommendation) => (
+                        <article
+                          className="rounded-xl border border-[#E5E7EB] p-4"
+                          key={recommendation.improvement.id}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="font-bold text-[#111827]">
+                                {
+                                  recommendation.improvement
+                                    .improvementName
+                                }
+                              </p>
+                              <p className="mt-1 text-xs font-bold uppercase tracking-[0.08em] text-[#9CA3AF]">
+                                {recommendation.improvement.category}
+                              </p>
+                            </div>
+                            <span className="rounded-full border border-[rgba(212,160,23,0.35)] bg-[rgba(212,160,23,0.12)] px-2.5 py-1 text-xs font-extrabold text-[#92640a]">
+                              {recommendation.priority}
+                            </span>
+                          </div>
+                          <p className="mt-3 text-sm leading-6 text-[#6B7280]">
+                            {recommendation.improvement.description}
+                          </p>
+                        </article>
+                      ))}
+                    </div>
+                  </div>
+                </SectionCard>
+              )}
 
               {findings.length > 0 && (
                 <SectionCard>
@@ -715,6 +911,40 @@ export default function Home() {
                     <p className="mt-2 text-sm leading-6 text-[#6B7280]">
                       {report.propertySummary}
                     </p>
+                  </section>
+
+                  <section>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <h3 className="text-base font-bold text-[#111827]">
+                          Property Readiness
+                        </h3>
+                        <p className="mt-2 text-sm leading-6 text-[#6B7280]">
+                          {report.readinessScore.summary}
+                        </p>
+                      </div>
+                      <ConfidenceBadge confidence={report.confidenceLevel} />
+                    </div>
+                    <div className="mt-3 grid gap-3 md:grid-cols-3">
+                      <div className="rounded-xl border border-[#E5E7EB] bg-[#F9FAFB] p-4">
+                        <p className="label-caps">Status</p>
+                        <p className="mt-2 font-bold text-[#111827]">
+                          {report.readinessScore.status}
+                        </p>
+                      </div>
+                      <div className="rounded-xl border border-[#E5E7EB] bg-[#F9FAFB] p-4">
+                        <p className="label-caps">Investment</p>
+                        <p className="mt-2 font-bold text-[#111827]">
+                          {report.recommendedInvestmentRange}
+                        </p>
+                      </div>
+                      <div className="rounded-xl border border-[#E5E7EB] bg-[#F9FAFB] p-4">
+                        <p className="label-caps">Added Value</p>
+                        <p className="mt-2 font-bold text-[#111827]">
+                          {report.potentialAddedSaleValueRange}
+                        </p>
+                      </div>
+                    </div>
                   </section>
 
                   <section>
