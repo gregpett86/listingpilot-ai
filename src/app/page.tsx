@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, useMemo, useState } from "react";
+import { ChangeEvent, DragEvent, useMemo, useState } from "react";
 import { jsPDF } from "jspdf";
 import {
   RealtyEdgePageHeader,
@@ -470,27 +470,64 @@ export default function Home() {
     [photos],
   );
 
-  function handlePhotoUpload(event: ChangeEvent<HTMLInputElement>) {
-    const selectedFiles = Array.from(event.target.files ?? []).slice(0, 30);
-    const nextPhotos = selectedFiles.map((file, index) => ({
-        id: `${file.name}-${file.lastModified}-${index}`,
-        name: file.name,
-        url: URL.createObjectURL(file),
-        size: file.size,
-        area: propertyAreas[index % propertyAreas.length],
-        classificationConfidence: 0.2,
-        matchedKeywords: [],
-        file,
-    }));
-
-    setPhotos(nextPhotos);
+  function resetAnalysisState() {
     setFindings([]);
     setRecommendations([]);
     setReadinessScore(null);
     setAnalysisConfidence("Low");
     setAnalysisError("");
     setReport(null);
+  }
+
+  function appendPhotoFiles(files: File[]) {
+    const imageFiles = files.filter((file) => file.type.startsWith("image/"));
+
+    if (imageFiles.length === 0) {
+      return;
+    }
+
+    if (photos.length >= 30) {
+      return;
+    }
+
+    setPhotos((currentPhotos) => {
+      const remainingSlots = Math.max(30 - currentPhotos.length, 0);
+      const uploadBatchId = Date.now();
+      const nextPhotos = imageFiles
+        .slice(0, remainingSlots)
+        .map((file, index) => ({
+          id: `${file.name}-${file.lastModified}-${index}`,
+          name: file.name,
+          url: URL.createObjectURL(file),
+          size: file.size,
+          area:
+            propertyAreas[
+              (currentPhotos.length + index) % propertyAreas.length
+            ],
+          classificationConfidence: 0.2,
+          matchedKeywords: [],
+          file,
+        }));
+
+      return [
+        ...currentPhotos,
+        ...nextPhotos.map((photo, index) => ({
+          ...photo,
+          id: `${photo.id}-${uploadBatchId}-${currentPhotos.length + index}`,
+        })),
+      ];
+    });
+    resetAnalysisState();
+  }
+
+  function handlePhotoUpload(event: ChangeEvent<HTMLInputElement>) {
+    appendPhotoFiles(Array.from(event.target.files ?? []));
     event.target.value = "";
+  }
+
+  function handlePhotoDrop(event: DragEvent<HTMLLabelElement>) {
+    event.preventDefault();
+    appendPhotoFiles(Array.from(event.dataTransfer.files));
   }
 
   function updatePhotoArea(photoId: string, area: RoomType) {
@@ -659,9 +696,13 @@ export default function Home() {
                 step={1}
                 title="Upload Photos"
               >
-                <label className="flex cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-[#D1D5DB] bg-[#F9FAFB] px-4 py-8 text-center transition hover:border-[#D4A017] hover:bg-[#FDF9EE]">
+                <label
+                  className="flex cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-[#D1D5DB] bg-[#F9FAFB] px-4 py-8 text-center transition hover:border-[#D4A017] hover:bg-[#FDF9EE]"
+                  onDragOver={(event) => event.preventDefault()}
+                  onDrop={handlePhotoDrop}
+                >
                   <span className="text-sm font-bold text-[#111827]">
-                    Select property photos
+                    Select or drag property photos
                   </span>
                   <span className="mt-1 text-xs font-medium text-[#6B7280]">
                     JPG, PNG, or WebP. Up to 30 images.
