@@ -15,7 +15,6 @@ import {
 import {
   ROOM_TYPES,
   calculatePropertyReadinessScore,
-  classifyRoomFromText,
   createConditionObservation,
   recommendImprovements,
   type ConfidenceLevel,
@@ -36,6 +35,7 @@ type PhotoItem = {
   area: RoomType;
   classificationConfidence: number;
   matchedKeywords: string[];
+  file: File;
 };
 
 type AreaFinding = {
@@ -72,6 +72,28 @@ type OptimizationReport = {
 
 const propertyAreas = [...ROOM_TYPES];
 
+type VisionFinding = {
+  photoId: string;
+  roomType: RoomType;
+  condition: PropertyCondition;
+  confidence: ConfidenceLevel;
+  opportunities: string[];
+};
+
+const conditionSeverity: Record<PropertyCondition, number> = {
+  Excellent: 1,
+  Good: 2,
+  Average: 3,
+  Dated: 4,
+  "Needs Improvement": 5,
+};
+
+const confidenceScores: Record<ConfidenceLevel, number> = {
+  High: 0.85,
+  Medium: 0.6,
+  Low: 0.3,
+};
+
 function formatBytes(bytes: number) {
   const megabytes = bytes / 1024 / 1024;
   return `${megabytes.toFixed(megabytes >= 10 ? 0 : 1)} MB`;
@@ -93,102 +115,73 @@ function summarizeCurrencyRanges(ranges: CostRange[]) {
   return formatCurrencyRange(totals);
 }
 
-function classifyPhoto(fileName: string, index: number) {
-  const classification = classifyRoomFromText(fileName);
+function fileToDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
 
-  if (classification.matchedKeywords.length > 0) {
-    return classification;
-  }
-
-  return {
-    ...classification,
-    roomType: propertyAreas[index % propertyAreas.length],
-  };
+    reader.addEventListener("load", () => {
+      resolve(String(reader.result));
+    });
+    reader.addEventListener("error", () => {
+      reject(reader.error);
+    });
+    reader.readAsDataURL(file);
+  });
 }
 
-function detectObservedIssues(photos: PhotoItem[]) {
-  const issueMatchers = [
-    { keyword: "dated", issue: "dated finishes" },
-    { keyword: "old", issue: "dated finishes" },
-    { keyword: "worn", issue: "worn surfaces" },
-    { keyword: "damage", issue: "visible damage" },
-    { keyword: "repair", issue: "repair needs" },
-    { keyword: "stain", issue: "staining" },
-    { keyword: "crack", issue: "cracking" },
-    { keyword: "dark", issue: "low light" },
-    { keyword: "clutter", issue: "clutter" },
-  ];
-
-  const fileNames = photos.map((photo) => photo.name.toLowerCase()).join(" ");
-
-  return Array.from(
-    new Set(
-      issueMatchers
-        .filter(({ keyword }) => fileNames.includes(keyword))
-        .map(({ issue }) => issue),
-    ),
+function strongestCondition(findings: VisionFinding[]): PropertyCondition {
+  return findings.reduce<PropertyCondition>(
+    (selectedCondition, finding) =>
+      conditionSeverity[finding.condition] > conditionSeverity[selectedCondition]
+        ? finding.condition
+        : selectedCondition,
+    "Excellent",
   );
 }
 
-function conditionFromPhotoGroup(photos: PhotoItem[]): PropertyCondition {
-  const observedIssues = detectObservedIssues(photos);
-
-  if (
-    observedIssues.some((issue) =>
-      ["visible damage", "repair needs", "staining", "cracking"].includes(issue),
-    )
-  ) {
-    return "Needs Improvement";
-  }
-
-  if (
-    observedIssues.some((issue) =>
-      ["dated finishes", "worn surfaces", "low light", "clutter"].includes(
-        issue,
-      ),
-    )
-  ) {
-    return "Dated";
-  }
-
-  if (photos.length >= 6) return "Excellent";
-  if (photos.length >= 4) return "Good";
-  if (photos.length >= 2) return "Average";
-  return "Needs Improvement";
-}
-
-function confidenceFromPhotos(photos: PhotoItem[]) {
+function confidenceFromVisionFindings(findings: VisionFinding[]) {
   const averageConfidence =
-    photos.reduce(
-      (sum, photo) => sum + photo.classificationConfidence,
+    findings.reduce(
+      (sum, finding) => sum + confidenceScores[finding.confidence],
       0,
-    ) / Math.max(photos.length, 1);
+    ) / Math.max(findings.length, 1);
 
-  if (photos.length >= 20 && averageConfidence >= 0.5) return "High";
-  if (photos.length >= 10 || averageConfidence >= 0.45) return "Medium";
+  if (findings.length >= 20 && averageConfidence >= 0.7) return "High";
+  if (findings.length >= 10 || averageConfidence >= 0.55) return "Medium";
   return "Low";
 }
 
-function buildObservations(photos: PhotoItem[]): PropertyConditionObservation[] {
+function buildObservations(
+  photos: PhotoItem[],
+  visionFindings: VisionFinding[],
+): PropertyConditionObservation[] {
   return propertyAreas.flatMap((area) => {
-    const areaPhotos = photos.filter((photo) => photo.area === area);
+    const areaFindings = visionFindings.filter(
+      (finding) => finding.roomType === area,
+    );
 
-    if (areaPhotos.length === 0) {
+    if (areaFindings.length === 0) {
       return [];
     }
 
-    const observedIssues = detectObservedIssues(areaPhotos);
-    const condition = conditionFromPhotoGroup(areaPhotos);
+    const observedIssues = Array.from(
+      new Set(areaFindings.flatMap((finding) => finding.opportunities)),
+    );
+    const condition = strongestCondition(areaFindings);
 
     return [
       createConditionObservation({
         roomType: area,
         condition,
-        photoCount: areaPhotos.length,
+        photoCount: areaFindings.length,
         observedIssues,
-        notes: `${areaPhotos.length} uploaded photo${
-          areaPhotos.length === 1 ? "" : "s"
-        } reviewed for ${area.toLowerCase()} presentation readiness.`,
+        notes: `${areaFindings.length} uploaded photo${
+          areaFindings.length === 1 ? "" : "s"
+        } analyzed with OpenAI Vision. ${
+          observedIssues.length
+            ? `Visible opportunities: ${observedIssues.join(", ")}.`
+            : "No specific visible opportunities were returned."
+        }`,
       }),
     ];
   });
@@ -465,6 +458,7 @@ export default function Home() {
     useState<PropertyReadinessScore | null>(null);
   const [analysisConfidence, setAnalysisConfidence] =
     useState<ConfidenceLevel>("Low");
+  const [analysisError, setAnalysisError] = useState("");
   const [report, setReport] = useState<OptimizationReport | null>(null);
 
   const photoCounts = useMemo(
@@ -478,25 +472,23 @@ export default function Home() {
 
   function handlePhotoUpload(event: ChangeEvent<HTMLInputElement>) {
     const selectedFiles = Array.from(event.target.files ?? []).slice(0, 30);
-    const nextPhotos = selectedFiles.map((file, index) => {
-      const classification = classifyPhoto(file.name, index);
-
-      return {
+    const nextPhotos = selectedFiles.map((file, index) => ({
         id: `${file.name}-${file.lastModified}-${index}`,
         name: file.name,
         url: URL.createObjectURL(file),
         size: file.size,
-        area: classification.roomType,
-        classificationConfidence: classification.confidence,
-        matchedKeywords: classification.matchedKeywords,
-      };
-    });
+        area: propertyAreas[index % propertyAreas.length],
+        classificationConfidence: 0.2,
+        matchedKeywords: [],
+        file,
+    }));
 
     setPhotos(nextPhotos);
     setFindings([]);
     setRecommendations([]);
     setReadinessScore(null);
     setAnalysisConfidence("Low");
+    setAnalysisError("");
     setReport(null);
     event.target.value = "";
   }
@@ -520,13 +512,72 @@ export default function Home() {
     setRecommendations([]);
     setReadinessScore(null);
     setAnalysisConfidence("Low");
+    setAnalysisError("");
     setReport(null);
   }
 
-  function analyzePhotos() {
+  async function analyzePhotos() {
     setIsAnalyzing(true);
-    window.setTimeout(() => {
-      const nextObservations = buildObservations(photos);
+    setAnalysisError("");
+
+    try {
+      const payloadPhotos = await Promise.all(
+        photos.map(async (photo) => ({
+          id: photo.id,
+          name: photo.name,
+          dataUrl: await fileToDataUrl(photo.file),
+        })),
+      );
+      const response = await fetch("/api/analyze-photos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ photos: payloadPhotos }),
+      });
+
+      if (!response.ok) {
+        const errorBody = (await response.json().catch(() => null)) as {
+          error?: string;
+        } | null;
+
+        throw new Error(errorBody?.error ?? "AI Vision analysis failed.");
+      }
+
+      const result = (await response.json()) as { findings: VisionFinding[] };
+      const visionFindings = result.findings;
+      const confidenceByPhotoId = new Map(
+        visionFindings.map((finding) => [
+          finding.photoId,
+          confidenceScores[finding.confidence],
+        ]),
+      );
+      const opportunitiesByPhotoId = new Map(
+        visionFindings.map((finding) => [
+          finding.photoId,
+          finding.opportunities,
+        ]),
+      );
+
+      setPhotos((currentPhotos) =>
+        currentPhotos.map((photo) => {
+          const finding = visionFindings.find(
+            (visionFinding) => visionFinding.photoId === photo.id,
+          );
+
+          return finding
+            ? {
+                ...photo,
+                area: finding.roomType,
+                classificationConfidence:
+                  confidenceByPhotoId.get(photo.id) ??
+                  photo.classificationConfidence,
+                matchedKeywords:
+                  opportunitiesByPhotoId.get(photo.id) ?? photo.matchedKeywords,
+              }
+            : photo;
+        }),
+      );
+
+      const nextObservations = buildObservations(photos, visionFindings);
       const nextRecommendations = recommendImprovements({
         observations: nextObservations,
         limit: 12,
@@ -535,7 +586,7 @@ export default function Home() {
         observations: nextObservations,
         recommendations: nextRecommendations,
       });
-      const nextAnalysisConfidence = confidenceFromPhotos(photos);
+      const nextAnalysisConfidence = confidenceFromVisionFindings(visionFindings);
 
       setFindings(
         buildFindings({
@@ -547,8 +598,15 @@ export default function Home() {
       setReadinessScore(nextReadinessScore);
       setAnalysisConfidence(nextAnalysisConfidence);
       setReport(null);
+    } catch (error) {
+      setAnalysisError(
+        error instanceof Error
+          ? error.message
+          : "AI Vision analysis could not be completed.",
+      );
+    } finally {
       setIsAnalyzing(false);
-    }, 900);
+    }
   }
 
   function createReport() {
@@ -670,6 +728,11 @@ export default function Home() {
                 >
                   {isAnalyzing ? "Analyzing photos..." : "Run AI Analysis"}
                 </button>
+                {analysisError && (
+                  <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
+                    {analysisError}
+                  </p>
+                )}
               </StepCard>
 
               <StepCard
