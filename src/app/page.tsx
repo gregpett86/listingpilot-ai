@@ -102,11 +102,12 @@ type VisionFinding = {
 };
 
 type VisionAnalysisResponse = {
-  findings: VisionFinding[];
+  findings?: VisionFinding[];
   rawVisionJson?: unknown;
   rawOutputText?: string;
   model?: string;
   requestedPhotoCount?: number;
+  trace?: PipelineTraceEntry[];
   error?: string;
   errorType?:
     | "missing_api_key"
@@ -115,6 +116,21 @@ type VisionAnalysisResponse = {
     | "json_parsing_failure"
     | "rate_limit_issue";
   detail?: string;
+};
+
+type PipelineTraceEntry = {
+  stage:
+    | "button_click"
+    | "frontend_request"
+    | "api_route"
+    | "openai_request"
+    | "openai_response"
+    | "json_parser"
+    | "database_save"
+    | "ui_render";
+  status: "started" | "success" | "failure" | "skipped";
+  message: string;
+  data?: Record<string, unknown>;
 };
 
 const conditionSeverity: Record<PropertyCondition, number> = {
@@ -544,6 +560,7 @@ export default function Home() {
   const [analysisError, setAnalysisError] = useState("");
   const [visionDebugResponse, setVisionDebugResponse] =
     useState<VisionAnalysisResponse | null>(null);
+  const [pipelineTrace, setPipelineTrace] = useState<PipelineTraceEntry[]>([]);
   const [report, setReport] = useState<OptimizationReport | null>(null);
 
   const photoCounts = useMemo(
@@ -592,7 +609,7 @@ export default function Home() {
   const visionFindingsByPhotoId = useMemo(
     () =>
       new Map(
-        visionDebugResponse?.findings.map((finding) => [
+        visionDebugResponse?.findings?.map((finding) => [
           finding.photoId,
           finding,
         ]) ?? [],
@@ -632,6 +649,7 @@ export default function Home() {
     setAnalysisConfidence("Low");
     setAnalysisError("");
     setVisionDebugResponse(null);
+    setPipelineTrace([]);
     setReport(null);
   }
 
@@ -745,9 +763,26 @@ export default function Home() {
     setIsAnalyzing(true);
     setAnalysisError("");
     setVisionDebugResponse(null);
+    setPipelineTrace([]);
     let visionLogOpen = false;
+    const localTrace: PipelineTraceEntry[] = [];
+    const recordTrace = (entry: PipelineTraceEntry) => {
+      localTrace.push(entry);
+      console.log("[ListingPilot Pipeline Trace]", entry);
+      setPipelineTrace([...localTrace]);
+    };
 
     try {
+      recordTrace({
+        stage: "button_click",
+        status: "started",
+        message: "Run AI Analysis button clicked.",
+        data: {
+          photoCount: photos.length,
+          photoNames: photos.map((photo) => photo.name),
+        },
+      });
+
       const payloadPhotos = await Promise.all(
         photos.map(async (photo) => ({
           id: photo.id,
@@ -755,6 +790,17 @@ export default function Home() {
           dataUrl: await fileToDataUrl(photo.file),
         })),
       );
+      recordTrace({
+        stage: "frontend_request",
+        status: "started",
+        message: "Frontend prepared Vision request payload.",
+        data: {
+          requestSent: true,
+          photoCount: payloadPhotos.length,
+          photoIds: payloadPhotos.map((photo) => photo.id),
+          photoNames: payloadPhotos.map((photo) => photo.name),
+        },
+      });
 
       console.groupCollapsed("[ListingPilot Vision] analyzePhotos");
       console.log("calling /api/analyze-photos", {
@@ -771,6 +817,16 @@ export default function Home() {
       });
 
       console.log("Vision route response status", response.status);
+      recordTrace({
+        stage: "frontend_request",
+        status: response.ok ? "success" : "failure",
+        message: "Frontend received response from Vision API route.",
+        data: {
+          responseReceived: true,
+          status: response.status,
+          ok: response.ok,
+        },
+      });
 
       if (!response.ok) {
         const errorBody = (await response.json().catch(() => null)) as
@@ -779,6 +835,16 @@ export default function Home() {
 
         console.error("Vision route error", errorBody);
         setVisionDebugResponse(errorBody);
+        setPipelineTrace([
+          ...localTrace,
+          ...(errorBody?.trace ?? []),
+          {
+            stage: "ui_render",
+            status: "failure",
+            message: "UI received Vision error response.",
+            data: { error: errorBody?.error },
+          },
+        ]);
 
         throw new Error(errorBody?.error ?? "AI Vision analysis failed.");
       }
@@ -788,8 +854,21 @@ export default function Home() {
       console.groupEnd();
       visionLogOpen = false;
       setVisionDebugResponse(result);
+      setPipelineTrace([
+        ...localTrace,
+        ...(result.trace ?? []),
+        {
+          stage: "ui_render",
+          status: "started",
+          message: "Frontend received parsed Vision JSON and is preparing UI state.",
+          data: {
+            parsedOutput: result.rawVisionJson,
+            findingCount: result.findings?.length ?? 0,
+          },
+        },
+      ]);
 
-      const visionFindings = result.findings;
+      const visionFindings = result.findings ?? [];
       const confidenceByPhotoId = new Map(
         visionFindings.map((finding) => [
           finding.photoId,
@@ -844,12 +923,39 @@ export default function Home() {
       setReadinessScore(nextReadinessScore);
       setAnalysisConfidence(nextAnalysisConfidence);
       setReport(null);
+      setPipelineTrace([
+        ...localTrace,
+        ...(result.trace ?? []),
+        {
+          stage: "ui_render",
+          status: "success",
+          message: "UI state updated with Vision findings, recommendations, and readiness score.",
+          data: {
+            findingsRendered: visionFindings.length,
+            observationsCreated: nextObservations.length,
+            recommendationsCreated: nextRecommendations.length,
+          },
+        },
+      ]);
     } catch (error) {
       setAnalysisError(
         error instanceof Error
           ? error.message
           : "AI Vision analysis could not be completed.",
       );
+      if (localTrace.length > 0) {
+        setPipelineTrace((currentTrace) => [
+          ...currentTrace,
+          {
+            stage: "ui_render",
+            status: "failure",
+            message: "Analysis pipeline stopped with an error.",
+            data: {
+              error: error instanceof Error ? error.message : String(error),
+            },
+          },
+        ]);
+      }
       if (visionLogOpen) {
         console.groupEnd();
       }
@@ -1130,7 +1236,7 @@ export default function Home() {
                 )}
               </SectionCard>
 
-              {(visionDebugResponse || analysisError) && (
+              {(visionDebugResponse || analysisError || pipelineTrace.length > 0) && (
                 <SectionCard>
                   <div>
                     <p className="label-caps text-[#B45309]">
@@ -1145,6 +1251,58 @@ export default function Home() {
                       opportunities.
                     </p>
                   </div>
+
+                  {pipelineTrace.length > 0 && (
+                    <div className="mt-5 rounded-xl border border-[#E5E7EB] bg-[#F9FAFB] p-4">
+                      <h3 className="text-sm font-bold text-[#111827]">
+                        Pipeline Trace
+                      </h3>
+                      <div className="mt-3 space-y-3">
+                        {pipelineTrace.map((entry, index) => (
+                          <article
+                            className="rounded-lg border border-[#E5E7EB] bg-white p-3"
+                            key={`${entry.stage}-${index}`}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <p className="text-sm font-bold text-[#111827]">
+                                  {entry.stage
+                                    .split("_")
+                                    .map(
+                                      (word) =>
+                                        word.charAt(0).toUpperCase() +
+                                        word.slice(1),
+                                    )
+                                    .join(" ")}
+                                </p>
+                                <p className="mt-1 text-sm leading-6 text-[#6B7280]">
+                                  {entry.message}
+                                </p>
+                              </div>
+                              <span
+                                className={
+                                  entry.status === "success"
+                                    ? "rounded-full bg-green-50 px-2.5 py-1 text-xs font-extrabold text-green-700"
+                                    : entry.status === "failure"
+                                      ? "rounded-full bg-red-50 px-2.5 py-1 text-xs font-extrabold text-red-700"
+                                      : entry.status === "skipped"
+                                        ? "rounded-full bg-[#F3F4F6] px-2.5 py-1 text-xs font-extrabold text-[#6B7280]"
+                                        : "rounded-full border border-[rgba(212,160,23,0.35)] bg-[rgba(212,160,23,0.12)] px-2.5 py-1 text-xs font-extrabold text-[#92640a]"
+                                }
+                              >
+                                {entry.status}
+                              </span>
+                            </div>
+                            {entry.data && (
+                              <pre className="mt-3 max-h-40 overflow-auto rounded-lg bg-[#111827] p-3 text-xs leading-5 text-white">
+                                {JSON.stringify(entry.data, null, 2)}
+                              </pre>
+                            )}
+                          </article>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   {visionDebugResponse?.error && (
                     <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-4">
@@ -1168,7 +1326,7 @@ export default function Home() {
                         <MetricCard
                           label="Route"
                           value={
-                            visionDebugResponse.findings.length > 0
+                            (visionDebugResponse.findings?.length ?? 0) > 0
                               ? "Called"
                               : "No Results"
                           }
