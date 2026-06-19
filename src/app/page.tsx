@@ -978,8 +978,32 @@ export default function Home() {
     );
   }
 
-  const readyForAnalysis = photos.length > 0;
+  const uploadedPhotoCount = photos.length;
+  const categorizedPhotoCount = coverageItems.filter(
+    ({ count }) => count > 0,
+  ).length;
+  const missingCategories = coverageItems
+    .filter(({ isRecommended, status }) => isRecommended && status === "Missing")
+    .map(({ category }) => category);
+  const analysisInProgress = isAnalyzing;
+  const buttonDisabledReason =
+    uploadedPhotoCount <= 0
+      ? "no_uploaded_photos"
+      : analysisInProgress
+        ? "analysis_in_progress"
+        : "none";
+  const runAnalysisButtonEnabled = buttonDisabledReason === "none";
   const recommendedCountMet = photos.length >= 20 && photos.length <= 30;
+
+  console.log("[ListingPilot analysis button state]", {
+    uploadedPhotoCount,
+    categorizedPhotoCount,
+    coverageScore: photoCoverageScore,
+    missingCategories,
+    analysisInProgress,
+    buttonDisabledReason,
+    buttonEnabled: runAnalysisButtonEnabled,
+  });
 
   return (
     <RealtyEdgeShell>
@@ -993,7 +1017,7 @@ export default function Home() {
                   { label: "Photos", value: photos.length },
                   {
                     label: "Rooms",
-                    value: coverageItems.filter(({ count }) => count > 0).length,
+                    value: categorizedPhotoCount,
                   },
                   {
                     label: "Coverage",
@@ -1118,9 +1142,42 @@ export default function Home() {
                   )}
                 </div>
 
+                <div className="mt-5 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-2.5">
+                  <div className="space-y-2 text-sm">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="font-semibold text-[#6B7280]">
+                        Button Enabled
+                      </span>
+                      <span className="font-bold text-[#111827]">
+                        {String(runAnalysisButtonEnabled)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="font-semibold text-[#6B7280]">
+                        Disable Reason
+                      </span>
+                      <span className="font-bold text-[#111827]">
+                        {buttonDisabledReason}
+                      </span>
+                    </div>
+                    <div className="grid gap-2 border-t border-[#E5E7EB] pt-2 text-xs text-[#6B7280] sm:grid-cols-2">
+                      <span>uploadedPhotoCount: {uploadedPhotoCount}</span>
+                      <span>categorizedPhotoCount: {categorizedPhotoCount}</span>
+                      <span>coverageScore: {photoCoverageScore}</span>
+                      <span>analysisInProgress: {String(analysisInProgress)}</span>
+                      <span className="sm:col-span-2">
+                        missingCategories:{" "}
+                        {missingCategories.length
+                          ? missingCategories.join(", ")
+                          : "none"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
                 <button
                   className="btn-press mt-5 flex w-full items-center justify-center rounded-xl bg-[#D4A017] px-5 py-3 text-sm font-extrabold text-[#111827] shadow-[0_2px_8px_rgba(212,160,23,0.3)] transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
-                  disabled={!readyForAnalysis || isAnalyzing}
+                  disabled={!runAnalysisButtonEnabled}
                   onClick={analyzePhotos}
                   type="button"
                 >
