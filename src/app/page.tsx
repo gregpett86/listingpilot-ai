@@ -71,6 +71,27 @@ type OptimizationReport = {
 };
 
 const propertyAreas = [...ROOM_TYPES];
+const recommendedCoverageCategories = [
+  "Kitchen",
+  "Bathroom",
+  "Living Room",
+  "Bedroom",
+  "Exterior",
+] as const;
+const optionalCoverageCategories = [
+  "Landscaping",
+  "Garage",
+  "Basement",
+  "Pool",
+] as const;
+const coverageCategories = [
+  ...recommendedCoverageCategories,
+  ...optionalCoverageCategories,
+] as const;
+
+type CoverageCategory = (typeof coverageCategories)[number];
+type CoverageStatus = "Complete" | "Partial" | "Missing";
+type CoverageScore = "Excellent" | "Good" | "Limited";
 
 type VisionFinding = {
   photoId: string;
@@ -109,6 +130,52 @@ const confidenceScores: Record<ConfidenceLevel, number> = {
   Medium: 0.6,
   Low: 0.3,
 };
+
+function isRoomCoverageCategory(
+  category: CoverageCategory,
+): category is RoomType {
+  return ROOM_TYPES.includes(category as RoomType);
+}
+
+function countCoveragePhotos(photos: PhotoItem[], category: CoverageCategory) {
+  if (category === "Pool") {
+    return photos.filter((photo) => {
+      const searchable = [photo.name, ...photo.matchedKeywords]
+        .join(" ")
+        .toLowerCase();
+
+      return (
+        searchable.includes("pool") ||
+        searchable.includes("spa") ||
+        searchable.includes("swimming")
+      );
+    }).length;
+  }
+
+  return isRoomCoverageCategory(category)
+    ? photos.filter((photo) => photo.area === category).length
+    : 0;
+}
+
+function coverageStatus(count: number): CoverageStatus {
+  if (count >= 2) return "Complete";
+  if (count === 1) return "Partial";
+  return "Missing";
+}
+
+function calculateCoverageScore({
+  photoCount,
+  recommendedMissingCount,
+  recommendedPartialOrCompleteCount,
+}: {
+  photoCount: number;
+  recommendedMissingCount: number;
+  recommendedPartialOrCompleteCount: number;
+}): CoverageScore {
+  if (photoCount >= 20 && recommendedMissingCount === 0) return "Excellent";
+  if (photoCount >= 6 || recommendedPartialOrCompleteCount >= 3) return "Good";
+  return "Limited";
+}
 
 function formatBytes(bytes: number) {
   const megabytes = bytes / 1024 / 1024;
@@ -481,12 +548,47 @@ export default function Home() {
 
   const photoCounts = useMemo(
     () =>
-      propertyAreas.map((area) => ({
-        area,
-        count: photos.filter((photo) => photo.area === area).length,
+      coverageCategories.map((category) => ({
+        category,
+        count: countCoveragePhotos(photos, category),
+        isRecommended: recommendedCoverageCategories.includes(
+          category as (typeof recommendedCoverageCategories)[number],
+        ),
       })),
     [photos],
   );
+  const coverageItems = useMemo(
+    () =>
+      photoCounts.map((item) => ({
+        ...item,
+        status: coverageStatus(item.count),
+      })),
+    [photoCounts],
+  );
+  const recommendedMissingCount = useMemo(
+    () =>
+      coverageItems.filter(
+        (item) => item.isRecommended && item.status === "Missing",
+      ).length,
+    [coverageItems],
+  );
+  const recommendedCoveredCount = useMemo(
+    () =>
+      coverageItems.filter(
+        (item) => item.isRecommended && item.status !== "Missing",
+      ).length,
+    [coverageItems],
+  );
+  const photoCoverageScore = useMemo(
+    () =>
+      calculateCoverageScore({
+        photoCount: photos.length,
+        recommendedMissingCount,
+        recommendedPartialOrCompleteCount: recommendedCoveredCount,
+      }),
+    [photos.length, recommendedCoveredCount, recommendedMissingCount],
+  );
+  const hasPartialCoverage = photos.length > 0 && recommendedMissingCount > 0;
   const visionFindingsByPhotoId = useMemo(
     () =>
       new Map(
@@ -770,7 +872,7 @@ export default function Home() {
     );
   }
 
-  const readyForAnalysis = photos.length >= 6;
+  const readyForAnalysis = photos.length > 0;
   const recommendedCountMet = photos.length >= 20 && photos.length <= 30;
 
   return (
@@ -785,11 +887,11 @@ export default function Home() {
                   { label: "Photos", value: photos.length },
                   {
                     label: "Rooms",
-                    value: photoCounts.filter(({ count }) => count > 0).length,
+                    value: coverageItems.filter(({ count }) => count > 0).length,
                   },
                   {
-                    label: "Recs",
-                    value: recommendations.length,
+                    label: "Coverage",
+                    value: photoCoverageScore,
                   },
                 ].map((metric) => (
                   <MetricCard
@@ -845,20 +947,58 @@ export default function Home() {
               </StepCard>
 
               <StepCard
-                description="Confirm photo coverage and run the AI assessment."
+                description="Review photo coverage guidance and run the AI assessment."
                 isComplete={findings.length > 0}
                 step={2}
                 title="Review Analysis"
               >
+                <div className="mb-4 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-2.5">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="font-semibold text-[#6B7280]">
+                      Photo coverage score
+                    </span>
+                    <span
+                      className={
+                        photoCoverageScore === "Excellent"
+                          ? "font-bold text-[#16a34a]"
+                          : photoCoverageScore === "Good"
+                            ? "font-bold text-[#92640a]"
+                            : "font-bold text-[#B45309]"
+                      }
+                    >
+                      {photoCoverageScore}
+                    </span>
+                  </div>
+                </div>
+                {hasPartialCoverage && (
+                  <p className="mb-4 rounded-lg border border-[rgba(212,160,23,0.28)] bg-[rgba(212,160,23,0.08)] px-3 py-2 text-sm font-semibold text-[#92640a]">
+                    Analysis can run with partial photo coverage. Results may
+                    be limited.
+                  </p>
+                )}
                 <div className="space-y-3">
-                  {photoCounts.map(({ area, count }) => (
-                    <div key={area}>
+                  {coverageItems.map(
+                    ({ category, count, isRecommended, status }) => (
+                    <div key={category}>
                       <div className="flex items-center justify-between text-sm">
                         <span className="font-semibold text-[#374151]">
-                          {area}
+                          {category}
+                          {!isRecommended && (
+                            <span className="ml-2 text-xs font-bold text-[#9CA3AF]">
+                              Optional
+                            </span>
+                          )}
                         </span>
-                        <span className="font-bold tabular-nums text-[#9CA3AF]">
-                          {count}
+                        <span
+                          className={
+                            status === "Complete"
+                              ? "font-bold text-[#16a34a]"
+                              : status === "Partial"
+                                ? "font-bold text-[#92640a]"
+                                : "font-bold text-[#9CA3AF]"
+                          }
+                        >
+                          {status}
                         </span>
                       </div>
                       <div className="mt-2 h-2 rounded-full bg-[#F3F4F6]">
@@ -868,7 +1008,8 @@ export default function Home() {
                         />
                       </div>
                     </div>
-                  ))}
+                    ),
+                  )}
                 </div>
 
                 <button
