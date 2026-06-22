@@ -1162,9 +1162,13 @@ export default function Home() {
                     </div>
                     <div className="grid gap-2 border-t border-[#E5E7EB] pt-2 text-xs text-[#6B7280] sm:grid-cols-2">
                       <span>uploadedPhotoCount: {uploadedPhotoCount}</span>
+                      <span>photos.length: {photos.length}</span>
                       <span>categorizedPhotoCount: {categorizedPhotoCount}</span>
                       <span>coverageScore: {photoCoverageScore}</span>
                       <span>analysisInProgress: {String(analysisInProgress)}</span>
+                      <span>
+                        button.disabled: {String(!runAnalysisButtonEnabled)}
+                      </span>
                       <span className="sm:col-span-2">
                         missingCategories:{" "}
                         {missingCategories.length
