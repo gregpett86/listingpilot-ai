@@ -35,6 +35,13 @@ type VisionAnalysisJson = {
   findings?: Partial<VisionFinding>[];
 };
 
+type OpenAIErrorResponse = {
+  error?: {
+    code?: string;
+    type?: string;
+  };
+};
+
 const enableServerDebug =
   process.env.NODE_ENV !== "production" &&
   process.env.NEXT_PUBLIC_ENABLE_VISION_DEBUG === "true";
@@ -177,6 +184,34 @@ function buildFailure(
     errorType,
     message: safeErrorMessage(errorType),
   };
+}
+
+function providerErrorTypeFromResponse({
+  body,
+  status,
+}: {
+  body: string;
+  status: number;
+}): AnalysisErrorCode {
+  let parsed: OpenAIErrorResponse | null = null;
+
+  try {
+    parsed = JSON.parse(body) as OpenAIErrorResponse;
+  } catch {
+    parsed = null;
+  }
+
+  const providerCode = parsed?.error?.code ?? parsed?.error?.type;
+
+  if (providerCode === "insufficient_quota") {
+    return "provider_quota_exceeded";
+  }
+
+  if (status === 429) {
+    return "provider_rate_limited";
+  }
+
+  return "provider_unavailable";
 }
 
 function buildPhotoResults({
@@ -367,10 +402,10 @@ export async function POST(request: Request) {
 
   if (!providerResponse.ok) {
     const providerDetail = await providerResponse.text().catch(() => "");
-    const errorType =
-      providerResponse.status === 429
-        ? "provider_rate_limited"
-        : "provider_unavailable";
+    const errorType = providerErrorTypeFromResponse({
+      body: providerDetail,
+      status: providerResponse.status,
+    });
 
     logDebug("OpenAI returned an error response.", {
       status: providerResponse.status,

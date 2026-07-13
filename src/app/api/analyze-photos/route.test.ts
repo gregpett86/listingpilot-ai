@@ -158,4 +158,50 @@ describe("POST /api/analyze-photos", () => {
     expect(body.errorType).toBe("provider_response_invalid");
     expect(body).not.toHaveProperty("rawOutputText");
   });
+
+  it("maps insufficient quota separately from transient rate limits", async () => {
+    global.fetch = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          error: {
+            code: "insufficient_quota",
+            type: "insufficient_quota",
+          },
+        }),
+        { status: 429 },
+      ),
+    );
+
+    const response = await POST(request({ photos: [photo()] }));
+    const body = await json(response);
+
+    expect(response.status).toBe(429);
+    expect(body.errorType).toBe("provider_quota_exceeded");
+    expect(body.error).toBe(
+      "Image analysis quota is exhausted. Check the OpenAI project billing and quota settings.",
+    );
+  });
+
+  it("keeps generic 429 responses as transient rate limits", async () => {
+    global.fetch = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          error: {
+            code: "rate_limit_exceeded",
+            type: "rate_limit_exceeded",
+          },
+        }),
+        { status: 429 },
+      ),
+    );
+
+    const response = await POST(request({ photos: [photo()] }));
+    const body = await json(response);
+
+    expect(response.status).toBe(429);
+    expect(body.errorType).toBe("provider_rate_limited");
+    expect(body.error).toBe(
+      "Image analysis is busy right now. Please try again shortly.",
+    );
+  });
 });

@@ -42,6 +42,7 @@ export type AnalysisErrorCode =
   | "image_decode_failed"
   | "provider_unavailable"
   | "provider_rate_limited"
+  | "provider_quota_exceeded"
   | "provider_response_invalid"
   | "no_analysis_result";
 
@@ -163,6 +164,8 @@ export function safeErrorMessage(code: AnalysisErrorCode) {
       return "One or more photos could not be read as valid image files.";
     case "provider_rate_limited":
       return "Image analysis is busy right now. Please try again shortly.";
+    case "provider_quota_exceeded":
+      return "Image analysis quota is exhausted. Check the OpenAI project billing and quota settings.";
     case "provider_unavailable":
       return "Image analysis is temporarily unavailable. Please try again.";
     case "provider_response_invalid":
