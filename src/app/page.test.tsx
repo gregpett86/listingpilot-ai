@@ -80,6 +80,13 @@ describe("ListingPilot page", () => {
     expect(URL.createObjectURL).not.toHaveBeenCalled();
   });
 
+  it("keeps real-photo validation mode hidden in the normal UI", () => {
+    render(<Home />);
+
+    expect(screen.queryByText("Real-Photo Validation")).not.toBeInTheDocument();
+    expect(screen.queryByText("Raw Vision JSON")).not.toBeInTheDocument();
+  });
+
   it("cleans up object URLs on unmount", async () => {
     const { container, unmount } = render(<Home />);
 

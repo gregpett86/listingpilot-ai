@@ -15,17 +15,19 @@ import {
 import {
   ROOM_TYPES,
   calculatePropertyReadinessScore,
-  createConditionObservation,
   recommendImprovements,
   type ConfidenceLevel,
   type CostRange,
   type ImprovementRecommendation,
-  type PropertyCondition,
   type PropertyConditionObservation,
   type PropertyReadinessScore,
   type RecommendationPriority,
   type RoomType,
 } from "@/lib/property-intelligence";
+import {
+  buildRealPhotoValidationRows,
+  buildRoomObservations,
+} from "@/lib/listing-analysis";
 import {
   PHOTO_UPLOAD_LIMITS,
   SUPPORTED_IMAGE_MIME_TYPES,
@@ -117,14 +119,6 @@ type PipelineTraceEntry = {
   data?: Record<string, unknown>;
 };
 
-const conditionSeverity: Record<PropertyCondition, number> = {
-  Excellent: 1,
-  Good: 2,
-  Average: 3,
-  Dated: 4,
-  "Needs Improvement": 5,
-};
-
 const confidenceScores: Record<ConfidenceLevel, number> = {
   High: 0.85,
   Medium: 0.6,
@@ -197,16 +191,6 @@ function fileToDataUrl(file: File) {
   });
 }
 
-function strongestCondition(findings: VisionFinding[]): PropertyCondition {
-  return findings.reduce<PropertyCondition>(
-    (selectedCondition, finding) =>
-      conditionSeverity[finding.condition] > conditionSeverity[selectedCondition]
-        ? finding.condition
-        : selectedCondition,
-    "Excellent",
-  );
-}
-
 function confidenceFromVisionFindings(findings: VisionFinding[]) {
   const averageConfidence =
     findings.reduce(
@@ -217,42 +201,6 @@ function confidenceFromVisionFindings(findings: VisionFinding[]) {
   if (findings.length >= 20 && averageConfidence >= 0.7) return "High";
   if (findings.length >= 10 || averageConfidence >= 0.55) return "Medium";
   return "Low";
-}
-
-function buildObservations(
-  photos: PhotoItem[],
-  visionFindings: VisionFinding[],
-): PropertyConditionObservation[] {
-  return propertyAreas.flatMap((area) => {
-    const areaFindings = visionFindings.filter(
-      (finding) => finding.roomType === area,
-    );
-
-    if (areaFindings.length === 0) {
-      return [];
-    }
-
-    const observedIssues = Array.from(
-      new Set(areaFindings.flatMap((finding) => finding.opportunities)),
-    );
-    const condition = strongestCondition(areaFindings);
-
-    return [
-      createConditionObservation({
-        roomType: area,
-        condition,
-        photoCount: areaFindings.length,
-        observedIssues,
-        notes: `${areaFindings.length} uploaded photo${
-          areaFindings.length === 1 ? "" : "s"
-        } analyzed with OpenAI Vision. ${
-          observedIssues.length
-            ? `Visible opportunities: ${observedIssues.join(", ")}.`
-            : "No specific visible opportunities were returned."
-        }`,
-      }),
-    ];
-  });
 }
 
 function buildFindings({
@@ -627,6 +575,16 @@ export default function Home() {
     () => photos.filter((photo) => photo.analysisFailure),
     [photos],
   );
+  const realPhotoValidationRows = useMemo(
+    () =>
+      buildRealPhotoValidationRows({
+        observations: buildRoomObservations(visionDebugResponse?.findings ?? []),
+        photos,
+        recommendations,
+        visionFindings: visionDebugResponse?.findings ?? [],
+      }),
+    [photos, recommendations, visionDebugResponse],
+  );
 
   function resetAnalysisState() {
     setFindings([]);
@@ -976,7 +934,7 @@ export default function Home() {
         }),
       );
 
-      const nextObservations = buildObservations(photos, visionFindings);
+      const nextObservations = buildRoomObservations(visionFindings);
       const nextRecommendations = recommendImprovements({
         observations: nextObservations,
         limit: 12,
@@ -1413,15 +1371,15 @@ export default function Home() {
                 <SectionCard>
                   <div>
                     <p className="label-caps text-[#B45309]">
-                      Vision Validation Debug
+                      Real-Photo Validation
                     </p>
                     <h2 className="mt-2 text-base font-bold text-[#111827]">
-                      OpenAI Vision Response
+                      Listing AI Output Review
                     </h2>
                     <p className="mt-1 text-sm leading-6 text-[#6B7280]">
-                      Temporary validation panel for comparing uploaded photos
-                      against detected room type, condition, confidence, and
-                      opportunities.
+                      Development-only review surface for checking photo-level
+                      classifications, visible findings, recommendations,
+                      readiness contribution, and final report copy.
                     </p>
                   </div>
 
@@ -1513,80 +1471,103 @@ export default function Home() {
                       </div>
 
                       <div className="mt-5 space-y-4">
-                        {photos.map((photo) => {
-                          const finding = visionFindingsByPhotoId.get(photo.id);
-
-                          return (
-                            <article
-                              className="grid gap-4 rounded-xl border border-[#E5E7EB] p-4 md:grid-cols-[120px_1fr]"
-                              key={`vision-debug-${photo.id}`}
-                            >
-                              <div className="overflow-hidden rounded-lg bg-[#F3F4F6]">
-                                {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img
-                                  alt={photo.name}
-                                  className="aspect-[4/3] h-full w-full object-cover"
-                                  src={photo.url}
-                                />
-                              </div>
-                              <div>
+                        {realPhotoValidationRows.map((row) => (
+                          <article
+                            className="grid gap-4 rounded-xl border border-[#E5E7EB] p-4 md:grid-cols-[140px_1fr]"
+                            key={`real-photo-validation-${row.photoId}`}
+                          >
+                            <div className="overflow-hidden rounded-lg bg-[#F3F4F6]">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                alt={row.photoName}
+                                className="aspect-[4/3] h-full w-full object-cover"
+                                src={row.previewUrl}
+                              />
+                            </div>
+                            <div>
+                              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                                 <p className="truncate text-sm font-bold text-[#111827]">
-                                  {photo.name}
+                                  {row.photoName}
                                 </p>
-                                {finding ? (
-                                  <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
-                                    <div>
-                                      <dt className="label-caps">Room Type</dt>
-                                      <dd className="mt-1 font-bold text-[#111827]">
-                                        {finding.roomType}
-                                      </dd>
-                                    </div>
-                                    <div>
-                                      <dt className="label-caps">Condition</dt>
-                                      <dd className="mt-1 font-bold text-[#111827]">
-                                        {finding.condition}
-                                      </dd>
-                                    </div>
-                                    <div>
-                                      <dt className="label-caps">Confidence</dt>
-                                      <dd className="mt-1">
-                                        <ConfidenceBadge
-                                          confidence={finding.confidence}
-                                        />
-                                      </dd>
-                                    </div>
-                                    <div>
-                                      <dt className="label-caps">
-                                        Opportunities
-                                      </dt>
-                                      <dd className="mt-1 text-[#6B7280]">
-                                        {finding.opportunities.length
-                                          ? finding.opportunities.join(", ")
-                                          : "None returned"}
-                                      </dd>
-                                    </div>
-                                  </dl>
-                                ) : (
-                                  <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
-                                    No Vision result returned for this image.
-                                  </p>
+                                {row.confidence && (
+                                  <ConfidenceBadge
+                                    confidence={row.confidence}
+                                  />
                                 )}
                               </div>
-                            </article>
-                          );
-                        })}
+
+                              <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
+                                <div>
+                                  <dt className="label-caps">
+                                    Assigned Category
+                                  </dt>
+                                  <dd className="mt-1 font-bold text-[#111827]">
+                                    {row.assignedRoom}
+                                  </dd>
+                                </div>
+                                <div>
+                                  <dt className="label-caps">Vision Category</dt>
+                                  <dd className="mt-1 font-bold text-[#111827]">
+                                    {row.visionRoom ?? "No result"}
+                                  </dd>
+                                </div>
+                                <div>
+                                  <dt className="label-caps">Condition</dt>
+                                  <dd className="mt-1 font-bold text-[#111827]">
+                                    {row.condition ?? "No result"}
+                                  </dd>
+                                </div>
+                                <div>
+                                  <dt className="label-caps">
+                                    Readiness Contribution
+                                  </dt>
+                                  <dd className="mt-1 font-bold text-[#111827]">
+                                    {row.readinessContribution != null
+                                      ? `${row.readinessContribution}/100 room score`
+                                      : "Not scored"}
+                                  </dd>
+                                </div>
+                                <div className="sm:col-span-2">
+                                  <dt className="label-caps">
+                                    Visible Findings
+                                  </dt>
+                                  <dd className="mt-1 text-[#6B7280]">
+                                    {row.visibleFindings.length
+                                      ? row.visibleFindings.join(", ")
+                                      : "None returned"}
+                                  </dd>
+                                </div>
+                                <div className="sm:col-span-2">
+                                  <dt className="label-caps">
+                                    Selected Recommendation
+                                  </dt>
+                                  <dd className="mt-1 text-[#6B7280]">
+                                    {row.selectedRecommendation ??
+                                      "No recommendation selected"}
+                                  </dd>
+                                </div>
+                              </dl>
+
+                              {row.failure && (
+                                <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
+                                  {row.failure}
+                                </p>
+                              )}
+                            </div>
+                          </article>
+                        ))}
                       </div>
 
                       <div className="mt-5 rounded-xl border border-[#E5E7EB] bg-[#F9FAFB] p-4">
                         <h3 className="text-sm font-bold text-[#111827]">
-                          Vision Validation Report
+                          Validation Checklist
                         </h3>
                         <div className="mt-3 space-y-3 text-sm leading-6 text-[#6B7280]">
                           <p>
-                            Accuracy observations: compare each uploaded photo
-                            preview above against the detected room type and
-                            condition. Automated correctness scoring requires a
-                            human-labeled expected value for each image.
+                            Collect expected category, whether visible findings
+                            are supported, unsupported recommendations,
+                            duplicate findings, readiness-score impact, report
+                            issues, and PDF issues for each real-photo run.
                           </p>
                           <p>
                             Confidence issues:{" "}
@@ -1595,27 +1576,55 @@ export default function Home() {
                               : "No low-confidence or missing-result flags were detected in the returned JSON."}
                           </p>
                           <p>
-                            Recommendation quality issues: opportunities should
-                            be visible, photo-specific, and limited to property
-                            presentation improvements. Generic or non-visible
-                            opportunities should be treated as weak or
-                            hallucinated.
-                          </p>
-                          <p>
-                            Prompt weaknesses to watch: room ambiguity, overly
-                            broad condition labels, opportunities not grounded
-                            in the image, and confidence that does not decrease
-                            for unclear photos.
+                            Truthfulness guardrail: do not treat hidden defects,
+                            age, value, ROI, code compliance, structure, or
+                            system condition as known unless they are clearly
+                            visible in the photo.
                           </p>
                         </div>
                       </div>
 
-                      <div className="mt-5">
-                        <p className="label-caps">Raw Vision JSON</p>
-                        <pre className="mt-3 max-h-96 overflow-auto rounded-xl border border-[#E5E7EB] bg-[#111827] p-4 text-xs leading-5 text-white">
-                          {JSON.stringify(visionDebugResponse, null, 2)}
-                        </pre>
-                      </div>
+                      {report && (
+                        <div className="mt-5 rounded-xl border border-[#E5E7EB] bg-white p-4">
+                          <h3 className="text-sm font-bold text-[#111827]">
+                            Final Report Output
+                          </h3>
+                          <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
+                            <div>
+                              <dt className="label-caps">Readiness</dt>
+                              <dd className="mt-1 text-[#6B7280]">
+                                {report.readinessScore.status} (
+                                {report.readinessScore.score}/100)
+                              </dd>
+                            </div>
+                            <div>
+                              <dt className="label-caps">Confidence</dt>
+                              <dd className="mt-1 text-[#6B7280]">
+                                {report.confidenceLevel}
+                              </dd>
+                            </div>
+                            <div className="sm:col-span-2">
+                              <dt className="label-caps">Summary</dt>
+                              <dd className="mt-1 text-[#6B7280]">
+                                {report.propertySummary}
+                              </dd>
+                            </div>
+                            <div className="sm:col-span-2">
+                              <dt className="label-caps">
+                                Top Opportunities
+                              </dt>
+                              <dd className="mt-1 text-[#6B7280]">
+                                {report.topOpportunities
+                                  .map(
+                                    (recommendation) =>
+                                      `${recommendation.improvement.category}: ${recommendation.improvement.improvementName}`,
+                                  )
+                                  .join("; ")}
+                              </dd>
+                            </div>
+                          </dl>
+                        </div>
+                      )}
                     </>
                   )}
                 </SectionCard>
