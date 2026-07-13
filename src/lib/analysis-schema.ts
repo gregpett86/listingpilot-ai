@@ -8,7 +8,7 @@ import {
 } from "@/lib/property-intelligence";
 
 export const PHOTO_UPLOAD_LIMITS = {
-  maxPhotos: 30,
+  maxPhotos: 20,
   maxBytesPerPhoto: 8 * 1024 * 1024,
   maxTotalBytes: 80 * 1024 * 1024,
   maxNameLength: 160,
@@ -56,6 +56,7 @@ export type AnalysisValidationIssue = {
 export type AnalyzePhotoInput = {
   id: string;
   name: string;
+  assignedCategory: RoomType;
   fileMimeType?: string;
   fileSize?: number;
   dataUrl: string;
@@ -69,10 +70,17 @@ export type ValidatedAnalyzePhotoInput = AnalyzePhotoInput & {
 
 export type VisionFinding = {
   photoId: string;
-  roomType: RoomType;
+  assignedCategory: RoomType;
+  suggestedCategory: RoomType;
+  categoryMismatch: boolean;
   condition: PropertyCondition;
   confidence: ConfidenceLevel;
-  opportunities: string[];
+  visibleFindings: string[];
+  explicitlySupportedRecommendations: string[];
+  evidenceForEachRecommendation: Array<{
+    recommendation: string;
+    evidence: string;
+  }>;
 };
 
 export type PhotoAnalysisFailure = {
@@ -359,6 +367,7 @@ export function validateAnalyzePhotosBody(body: unknown): {
     const name = candidate.name;
     const fileMimeType = candidate.fileMimeType;
     const fileSize = candidate.fileSize;
+    const assignedCategory = candidate.assignedCategory;
     const fallbackId = typeof id === "string" ? id : "unknown";
     const fallbackName = typeof name === "string" ? name : "Uploaded photo";
 
@@ -391,6 +400,14 @@ export function validateAnalyzePhotosBody(body: unknown): {
     }
 
     seenIds.add(photoId);
+
+    if (
+      typeof assignedCategory !== "string" ||
+      !isSupportedRoomType(assignedCategory)
+    ) {
+      fail("malformed_request");
+      return;
+    }
 
     const normalizedFileMimeType =
       typeof fileMimeType === "string"
@@ -445,6 +462,7 @@ export function validateAnalyzePhotosBody(body: unknown): {
       name: photoName,
       fileMimeType: normalizedFileMimeType,
       fileSize,
+      assignedCategory,
       dataUrl: parsedDataUrl.dataUrl,
       decodedByteLength: parsedDataUrl.decodedByteLength,
     });

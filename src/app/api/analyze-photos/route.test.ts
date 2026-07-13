@@ -11,6 +11,7 @@ function photo(overrides: Record<string, unknown> = {}) {
   return {
     id: "photo-1",
     name: "kitchen.png",
+    assignedCategory: "Kitchen",
     fileMimeType: "image/png",
     fileSize: decodedByteLength(validPngBase64),
     dataUrl: validPngDataUrl,
@@ -107,10 +108,19 @@ describe("POST /api/analyze-photos", () => {
             findings: [
               {
                 photoId: "photo-1",
-                roomType: "Kitchen",
+                suggestedCategory: "Kitchen",
                 condition: "Average",
                 confidence: "High",
-                opportunities: ["cabinet hardware"],
+                visibleFindings: ["cabinet hardware"],
+                explicitlySupportedRecommendations: [
+                  "Cabinet hardware refresh",
+                ],
+                evidenceForEachRecommendation: [
+                  {
+                    recommendation: "Cabinet hardware refresh",
+                    evidence: "visible cabinet hardware",
+                  },
+                ],
               },
             ],
           }),
@@ -138,10 +148,54 @@ describe("POST /api/analyze-photos", () => {
 
     expect(response.status).toBe(200);
     expect(body.findings).toHaveLength(1);
+    expect(body.findings).toMatchObject([
+      {
+        assignedCategory: "Kitchen",
+        suggestedCategory: "Kitchen",
+        categoryMismatch: false,
+      },
+    ]);
     expect(body.failedPhotos).toMatchObject([
       { photoId: "bad-photo", errorType: "unsupported_mime_type" },
     ]);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("flags category mismatches without replacing the assigned category", async () => {
+    global.fetch = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          output_text: JSON.stringify({
+            findings: [
+              {
+                photoId: "photo-1",
+                suggestedCategory: "Basement",
+                condition: "Needs Improvement",
+                confidence: "High",
+                visibleFindings: ["outdoor water feature"],
+                explicitlySupportedRecommendations: [],
+                evidenceForEachRecommendation: [],
+              },
+            ],
+          }),
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const response = await POST(
+      request({ photos: [photo({ assignedCategory: "Pool" })] }),
+    );
+    const body = await json(response);
+
+    expect(response.status).toBe(200);
+    expect(body.findings).toMatchObject([
+      {
+        assignedCategory: "Pool",
+        suggestedCategory: "Basement",
+        categoryMismatch: true,
+      },
+    ]);
   });
 
   it("maps malformed OpenAI output to safe provider_response_invalid errors", async () => {

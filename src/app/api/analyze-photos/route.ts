@@ -58,19 +58,37 @@ const responseSchema = {
         additionalProperties: false,
         required: [
           "photoId",
-          "roomType",
+          "suggestedCategory",
           "condition",
           "confidence",
-          "opportunities",
+          "visibleFindings",
+          "explicitlySupportedRecommendations",
+          "evidenceForEachRecommendation",
         ],
         properties: {
           photoId: { type: "string" },
-          roomType: { enum: ROOM_TYPES },
+          suggestedCategory: { enum: ROOM_TYPES },
           condition: { enum: PROPERTY_CONDITIONS },
           confidence: { enum: CONFIDENCE_LEVELS },
-          opportunities: {
+          visibleFindings: {
             type: "array",
             items: { type: "string" },
+          },
+          explicitlySupportedRecommendations: {
+            type: "array",
+            items: { type: "string" },
+          },
+          evidenceForEachRecommendation: {
+            type: "array",
+            items: {
+              type: "object",
+              additionalProperties: false,
+              required: ["recommendation", "evidence"],
+              properties: {
+                recommendation: { type: "string" },
+                evidence: { type: "string" },
+              },
+            },
           },
         },
       },
@@ -131,14 +149,15 @@ function extractOutputText(response: OpenAIResponse) {
 
 function normalizeFinding(
   finding: Partial<VisionFinding>,
+  photo: ValidatedAnalyzePhotoInput,
 ): VisionFinding | null {
   if (typeof finding.photoId !== "string") {
     return null;
   }
 
   if (
-    typeof finding.roomType !== "string" ||
-    !isSupportedRoomType(finding.roomType)
+    typeof finding.suggestedCategory !== "string" ||
+    !isSupportedRoomType(finding.suggestedCategory)
   ) {
     return null;
   }
@@ -159,14 +178,41 @@ function normalizeFinding(
 
   return {
     photoId: finding.photoId,
-    roomType: finding.roomType,
+    assignedCategory: photo.assignedCategory,
+    suggestedCategory: finding.suggestedCategory,
+    categoryMismatch: finding.suggestedCategory !== photo.assignedCategory,
     condition: finding.condition,
     confidence: finding.confidence,
-    opportunities: Array.isArray(finding.opportunities)
-      ? finding.opportunities
+    visibleFindings: Array.isArray(finding.visibleFindings)
+      ? finding.visibleFindings
           .filter(
-            (opportunity): opportunity is string =>
-              typeof opportunity === "string",
+            (visibleFinding): visibleFinding is string =>
+              typeof visibleFinding === "string",
+          )
+          .slice(0, PHOTO_UPLOAD_LIMITS.maxOpportunities)
+      : [],
+    explicitlySupportedRecommendations: Array.isArray(
+      finding.explicitlySupportedRecommendations,
+    )
+      ? finding.explicitlySupportedRecommendations
+          .filter(
+            (recommendation): recommendation is string =>
+              typeof recommendation === "string",
+          )
+          .slice(0, PHOTO_UPLOAD_LIMITS.maxOpportunities)
+      : [],
+    evidenceForEachRecommendation: Array.isArray(
+      finding.evidenceForEachRecommendation,
+    )
+      ? finding.evidenceForEachRecommendation
+          .filter(
+            (
+              evidence,
+            ): evidence is { recommendation: string; evidence: string } =>
+              Boolean(evidence) &&
+              typeof evidence === "object" &&
+              typeof evidence.recommendation === "string" &&
+              typeof evidence.evidence === "string",
           )
           .slice(0, PHOTO_UPLOAD_LIMITS.maxOpportunities)
       : [],
@@ -267,18 +313,31 @@ async function callOpenAI({
       type: "input_text",
       text: `Analyze each uploaded real estate photo for ListingPilot AI.
 
-Return one finding per image. Use only these roomType values: ${ROOM_TYPES.join(", ")}.
+Return one finding per image. Use only these suggestedCategory values: ${ROOM_TYPES.join(", ")}.
 Use only these condition values: ${PROPERTY_CONDITIONS.join(", ")}.
 Use only these confidence values: ${CONFIDENCE_LEVELS.join(", ")}.
 
-Visible opportunities should be concise photo-grounded phrases such as cabinet hardware, lighting, paint, decluttering, landscaping cleanup, curb appeal, flooring, caulk, staging, fixture update, pressure washing, pool cleaning, or storage organization.
-If the image is unclear, use the closest room type, a conservative condition, and Low confidence.
-Each image is labeled with its photoId immediately before the image. Copy that exact photoId into the structured output.`,
+The user's assignedCategory is authoritative for product scoring and recommendation mapping. suggestedCategory is only your visual classification suggestion.
+Return a different suggestedCategory when the visible image clearly appears to be a different category, but do not force the assignedCategory into your suggestion.
+
+visibleFindings must be concise phrases grounded only in what is explicitly visible in the photo.
+explicitlySupportedRecommendations must be empty unless a recommendation is directly supported by a visibleFinding in that same photo.
+For every supported recommendation, evidenceForEachRecommendation must name the exact visible evidence.
+
+Do not infer odors, hidden moisture, age, value, ROI, code compliance, structural issues, system condition, urgency, or non-visible defects.
+Never recommend odor remediation from photo-only analysis.
+Moisture recommendations require visible staining, standing water, active leakage, mold-like discoloration, or similarly explicit visual evidence.
+Flooring cleanup requires visible wear, staining, debris, damage, or deterioration.
+Decluttering requires visible clutter. Paint refresh requires worn, marked, damaged, or strongly dated paint.
+Landscaping cleanup requires overgrowth, debris, dead vegetation, edging issues, weeds, or similarly visible issues.
+
+If the image is unclear, use the closest suggestedCategory, a conservative condition, Low confidence, and no recommendations unless the visual evidence is explicit.
+Each image is labeled with its photoId and assignedCategory immediately before the image. Copy the exact photoId into the structured output.`,
     },
     ...photos.flatMap((photo) => [
       {
         type: "input_text",
-        text: `photoId: ${photo.id}\nfileName: ${photo.name}`,
+        text: `photoId: ${photo.id}\nassignedCategory: ${photo.assignedCategory}\nfileName: ${photo.name}`,
       },
       {
         type: "input_image",
@@ -448,12 +507,19 @@ export async function POST(request: Request) {
     });
   }
 
-  const validPhotoIds = new Set(validPhotos.map((photo) => photo.id));
+  const validPhotosById = new Map(validPhotos.map((photo) => [photo.id, photo]));
   const findings =
     parsed.findings
-      ?.map(normalizeFinding)
+      ?.map((finding) => {
+        const photo =
+          typeof finding.photoId === "string"
+            ? validPhotosById.get(finding.photoId)
+            : undefined;
+
+        return photo ? normalizeFinding(finding, photo) : null;
+      })
       .filter((finding): finding is VisionFinding =>
-        Boolean(finding && validPhotoIds.has(finding.photoId)),
+        Boolean(finding),
       ) ?? [];
   const { missingFindings, results } = buildPhotoResults({
     failedPhotos: validationFailures,

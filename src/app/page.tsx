@@ -564,8 +564,12 @@ export default function Home() {
         flags.push(`${photo.name}: low-confidence classification.`);
       }
 
-      if (finding.opportunities.length === 0) {
-        flags.push(`${photo.name}: no visible opportunities returned.`);
+      if (finding.categoryMismatch) {
+        flags.push(`${photo.name}: category mismatch - review required.`);
+      }
+
+      if (finding.visibleFindings.length === 0) {
+        flags.push(`${photo.name}: no visible findings returned.`);
       }
 
       return flags;
@@ -790,6 +794,7 @@ export default function Home() {
           return {
             id: photo.id,
             name: photo.name,
+            assignedCategory: photo.area,
             fileMimeType: photo.file.type,
             fileSize: photo.file.size,
             dataUrl,
@@ -896,10 +901,10 @@ export default function Home() {
           confidenceScores[finding.confidence],
         ]),
       );
-      const opportunitiesByPhotoId = new Map(
+      const visibleFindingsByPhotoId = new Map(
         visionFindings.map((finding) => [
           finding.photoId,
-          finding.opportunities,
+          finding.visibleFindings,
         ]),
       );
 
@@ -913,12 +918,12 @@ export default function Home() {
           if (finding) {
             return {
               ...photo,
-              area: finding.roomType,
               classificationConfidence:
                 confidenceByPhotoId.get(photo.id) ??
                 photo.classificationConfidence,
               matchedKeywords:
-                opportunitiesByPhotoId.get(photo.id) ?? photo.matchedKeywords,
+                visibleFindingsByPhotoId.get(photo.id) ??
+                photo.matchedKeywords,
               analysisFailure: undefined,
             };
           }
@@ -1037,7 +1042,8 @@ export default function Home() {
         ? "analysis_in_progress"
         : "none";
   const runAnalysisButtonEnabled = buttonDisabledReason === "none";
-  const recommendedCountMet = photos.length >= 20 && photos.length <= 30;
+  const recommendedCountMet =
+    photos.length >= 12 && photos.length <= PHOTO_UPLOAD_LIMITS.maxPhotos;
 
   return (
     <RealtyEdgeShell>
@@ -1067,7 +1073,7 @@ export default function Home() {
               </div>
 
               <StepCard
-                description="Upload 20-30 property photos for best coverage."
+                description="For best results, upload 12-20 photos covering all major rooms and the exterior."
                 isReady
                 step={1}
                 title="Upload Photos"
@@ -1116,7 +1122,7 @@ export default function Home() {
                     >
                       {recommendedCountMet
                         ? "Met"
-                        : `20-${PHOTO_UPLOAD_LIMITS.maxPhotos} photos`}
+                        : `12-${PHOTO_UPLOAD_LIMITS.maxPhotos} photos`}
                     </span>
                   </div>
                 </div>
@@ -1473,7 +1479,7 @@ export default function Home() {
                       <div className="mt-5 space-y-4">
                         {realPhotoValidationRows.map((row) => (
                           <article
-                            className="grid gap-4 rounded-xl border border-[#E5E7EB] p-4 md:grid-cols-[140px_1fr]"
+                            className="grid min-w-0 gap-4 rounded-xl border border-[#E5E7EB] p-4 md:grid-cols-[140px_minmax(0,1fr)]"
                             key={`real-photo-validation-${row.photoId}`}
                           >
                             <div className="overflow-hidden rounded-lg bg-[#F3F4F6]">
@@ -1484,64 +1490,92 @@ export default function Home() {
                                 src={row.previewUrl}
                               />
                             </div>
-                            <div>
-                              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                                <p className="truncate text-sm font-bold text-[#111827]">
+                            <div className="min-w-0">
+                              <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                                <p
+                                  className="min-w-0 truncate text-sm font-bold text-[#111827]"
+                                  title={row.photoName}
+                                >
                                   {row.photoName}
                                 </p>
-                                {row.confidence && (
-                                  <ConfidenceBadge
-                                    confidence={row.confidence}
-                                  />
-                                )}
+                                <div className="flex flex-wrap gap-2">
+                                  <span
+                                    className={`rounded-full px-2.5 py-1 text-xs font-bold ${
+                                      row.categoryMatchStatus === "Match"
+                                        ? "bg-green-50 text-green-700"
+                                        : row.categoryMatchStatus === "Mismatch"
+                                          ? "bg-amber-50 text-amber-700"
+                                          : "bg-[#F3F4F6] text-[#6B7280]"
+                                    }`}
+                                  >
+                                    {row.categoryMatchStatus}
+                                  </span>
+                                  {row.confidence && (
+                                    <ConfidenceBadge
+                                      confidence={row.confidence}
+                                    />
+                                  )}
+                                </div>
                               </div>
 
-                              <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
-                                <div>
+                              <dl className="mt-3 grid min-w-0 gap-3 text-sm sm:grid-cols-2">
+                                <div className="min-w-0">
                                   <dt className="label-caps">
                                     Assigned Category
                                   </dt>
-                                  <dd className="mt-1 font-bold text-[#111827]">
+                                  <dd className="mt-1 break-words font-bold text-[#111827]">
                                     {row.assignedRoom}
                                   </dd>
                                 </div>
-                                <div>
-                                  <dt className="label-caps">Vision Category</dt>
-                                  <dd className="mt-1 font-bold text-[#111827]">
+                                <div className="min-w-0">
+                                  <dt className="label-caps">
+                                    Vision Suggested Category
+                                  </dt>
+                                  <dd className="mt-1 break-words font-bold text-[#111827]">
                                     {row.visionRoom ?? "No result"}
                                   </dd>
                                 </div>
-                                <div>
+                                <div className="min-w-0">
                                   <dt className="label-caps">Condition</dt>
-                                  <dd className="mt-1 font-bold text-[#111827]">
+                                  <dd className="mt-1 break-words font-bold text-[#111827]">
                                     {row.condition ?? "No result"}
                                   </dd>
                                 </div>
-                                <div>
+                                <div className="min-w-0">
                                   <dt className="label-caps">
                                     Readiness Contribution
                                   </dt>
-                                  <dd className="mt-1 font-bold text-[#111827]">
+                                  <dd className="mt-1 break-words font-bold text-[#111827]">
                                     {row.readinessContribution != null
                                       ? `${row.readinessContribution}/100 room score`
                                       : "Not scored"}
                                   </dd>
                                 </div>
-                                <div className="sm:col-span-2">
+                                <div className="min-w-0 sm:col-span-2">
                                   <dt className="label-caps">
                                     Visible Findings
                                   </dt>
-                                  <dd className="mt-1 text-[#6B7280]">
+                                  <dd className="mt-1 break-words text-[#6B7280]">
                                     {row.visibleFindings.length
                                       ? row.visibleFindings.join(", ")
                                       : "None returned"}
                                   </dd>
                                 </div>
-                                <div className="sm:col-span-2">
+                                <div className="min-w-0 sm:col-span-2">
+                                  <dt className="label-caps">
+                                    Supported Recommendations
+                                  </dt>
+                                  <dd className="mt-1 break-words text-[#6B7280]">
+                                    {row.supportedRecommendations.length
+                                      ? row.supportedRecommendations.join(", ")
+                                      : "None returned"}
+                                  </dd>
+                                </div>
+                                <div className="min-w-0 sm:col-span-2">
                                   <dt className="label-caps">
                                     Selected Recommendation
                                   </dt>
-                                  <dd className="mt-1 text-[#6B7280]">
+                                  <dd className="mt-1 break-words text-[#6B7280]">
                                     {row.selectedRecommendation ??
                                       "No recommendation selected"}
                                   </dd>

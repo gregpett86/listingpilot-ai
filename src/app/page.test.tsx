@@ -105,7 +105,7 @@ describe("ListingPilot page", () => {
     const fetchMock = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
       callCount += 1;
       const payload = JSON.parse(String(init?.body)) as {
-        photos: Array<{ id: string; name: string }>;
+        photos: Array<{ id: string; name: string; assignedCategory: string }>;
       };
       const requestPhoto = payload.photos[0];
 
@@ -134,10 +134,21 @@ describe("ListingPilot page", () => {
           findings: [
             {
               photoId: requestPhoto.id,
-              roomType: "Kitchen",
+              assignedCategory: "Kitchen",
+              suggestedCategory: "Kitchen",
+              categoryMismatch: false,
               condition: "Average",
               confidence: "High",
-              opportunities: ["cabinet hardware"],
+              visibleFindings: ["cabinet hardware"],
+              explicitlySupportedRecommendations: [
+                "Cabinet hardware refresh",
+              ],
+              evidenceForEachRecommendation: [
+                {
+                  recommendation: "Cabinet hardware refresh",
+                  evidence: "visible cabinet hardware",
+                },
+              ],
             },
           ],
           failedPhotos: [],
@@ -164,13 +175,15 @@ describe("ListingPilot page", () => {
 
     const firstPayload = JSON.parse(
       String((fetchMock.mock.calls[0][1] as RequestInit).body),
-    ) as { photos: Array<{ id: string }> };
+    ) as { photos: Array<{ id: string; assignedCategory: string }> };
     const retryPayload = JSON.parse(
       String((fetchMock.mock.calls[1][1] as RequestInit).body),
-    ) as { photos: Array<{ id: string }> };
+    ) as { photos: Array<{ id: string; assignedCategory: string }> };
 
     expect(firstPayload.photos).toHaveLength(1);
+    expect(firstPayload.photos[0].assignedCategory).toBe("Kitchen");
     expect(retryPayload.photos).toHaveLength(1);
     expect(retryPayload.photos[0].id).toBe(firstPayload.photos[0].id);
+    expect(retryPayload.photos[0].assignedCategory).toBe("Kitchen");
   });
 });

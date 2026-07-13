@@ -10,17 +10,35 @@ import type { VisionFinding } from "./analysis-schema";
 const kitchenFindings: VisionFinding[] = [
   {
     photoId: "kitchen-1",
-    roomType: "Kitchen",
+    assignedCategory: "Kitchen",
+    suggestedCategory: "Kitchen",
+    categoryMismatch: false,
     condition: "Average",
     confidence: "High",
-    opportunities: ["Cabinet hardware", "lighting"],
+    visibleFindings: ["Cabinet hardware", "lighting"],
+    explicitlySupportedRecommendations: ["Cabinet hardware refresh"],
+    evidenceForEachRecommendation: [
+      {
+        recommendation: "Cabinet hardware refresh",
+        evidence: "visible cabinet hardware",
+      },
+    ],
   },
   {
     photoId: "kitchen-2",
-    roomType: "Kitchen",
+    assignedCategory: "Kitchen",
+    suggestedCategory: "Kitchen",
+    categoryMismatch: false,
     condition: "Dated",
     confidence: "Medium",
-    opportunities: ["cabinet hardware", "Lighting"],
+    visibleFindings: ["cabinet hardware", "Lighting"],
+    explicitlySupportedRecommendations: ["Cabinet hardware refresh"],
+    evidenceForEachRecommendation: [
+      {
+        recommendation: "Cabinet hardware refresh",
+        evidence: "visible cabinet hardware",
+      },
+    ],
   },
 ];
 
@@ -93,13 +111,72 @@ describe("listing-analysis helpers", () => {
         previewUrl: "blob:http://localhost/kitchen",
         assignedRoom: "Kitchen",
         visionRoom: "Kitchen",
+        categoryMatchStatus: "Match",
         condition: "Average",
         confidence: "High",
         visibleFindings: ["Cabinet hardware", "lighting"],
+        supportedRecommendations: ["Cabinet hardware refresh"],
         readinessContribution: 38,
       }),
     ]);
     expect(JSON.stringify(rows)).not.toContain("base64");
     expect(JSON.stringify(rows)).not.toContain("raw");
+  });
+
+  it("treats the user-assigned category as authoritative and blocks mismatches from scoring", () => {
+    const observations = buildRoomObservations([
+      {
+        photoId: "pool-1",
+        assignedCategory: "Pool",
+        suggestedCategory: "Basement",
+        categoryMismatch: true,
+        condition: "Needs Improvement",
+        confidence: "High",
+        visibleFindings: ["clear water feature"],
+        explicitlySupportedRecommendations: ["Moisture issue review"],
+        evidenceForEachRecommendation: [
+          {
+            recommendation: "Moisture issue review",
+            evidence: "water visible outdoors",
+          },
+        ],
+      },
+    ]);
+
+    expect(observations).toEqual([]);
+  });
+
+  it("ignores low-confidence and empty-finding photos for readiness observations", () => {
+    const observations = buildRoomObservations([
+      {
+        photoId: "living-1",
+        assignedCategory: "Living Room",
+        suggestedCategory: "Living Room",
+        categoryMismatch: false,
+        condition: "Dated",
+        confidence: "Low",
+        visibleFindings: ["paint looks dated"],
+        explicitlySupportedRecommendations: ["Wall paint refresh"],
+        evidenceForEachRecommendation: [
+          {
+            recommendation: "Wall paint refresh",
+            evidence: "paint looks dated",
+          },
+        ],
+      },
+      {
+        photoId: "exterior-1",
+        assignedCategory: "Exterior",
+        suggestedCategory: "Exterior",
+        categoryMismatch: false,
+        condition: "Average",
+        confidence: "High",
+        visibleFindings: [],
+        explicitlySupportedRecommendations: [],
+        evidenceForEachRecommendation: [],
+      },
+    ]);
+
+    expect(observations).toEqual([]);
   });
 });

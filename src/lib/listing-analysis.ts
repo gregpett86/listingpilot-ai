@@ -27,9 +27,11 @@ export type RealPhotoValidationRow = {
   previewUrl: string;
   assignedRoom: RoomType;
   visionRoom?: RoomType;
+  categoryMatchStatus: "Match" | "Mismatch" | "No result";
   condition?: PropertyCondition;
   confidence?: ConfidenceLevel;
   visibleFindings: string[];
+  supportedRecommendations: string[];
   selectedRecommendation?: string;
   readinessContribution?: number;
   failure?: string;
@@ -76,12 +78,21 @@ export function dedupeVisibleFindings(findings: string[]) {
   return Array.from(uniqueFindings.values());
 }
 
+function hasConfirmedFinding(finding: VisionFinding) {
+  return (
+    !finding.categoryMismatch &&
+    finding.confidence !== "Low" &&
+    finding.visibleFindings.length > 0
+  );
+}
+
 export function buildRoomObservations(
   visionFindings: VisionFinding[],
 ): PropertyConditionObservation[] {
   return ROOM_TYPES.flatMap((roomType) => {
     const roomFindings = visionFindings.filter(
-      (finding) => finding.roomType === roomType,
+      (finding) =>
+        finding.assignedCategory === roomType && hasConfirmedFinding(finding),
     );
 
     if (roomFindings.length === 0) {
@@ -89,7 +100,7 @@ export function buildRoomObservations(
     }
 
     const observedIssues = dedupeVisibleFindings(
-      roomFindings.flatMap((finding) => finding.opportunities),
+      roomFindings.flatMap((finding) => finding.visibleFindings),
     );
     const condition = strongestCondition(roomFindings);
 
@@ -140,21 +151,32 @@ export function buildRealPhotoValidationRows({
 
   return photos.map((photo) => {
     const finding = findingByPhotoId.get(photo.id);
-    const roomType = finding?.roomType ?? photo.area;
-    const observation = observationByRoom.get(roomType);
-    const recommendation = recommendationByRoom.get(roomType);
+    const observation = observationByRoom.get(photo.area);
+    const recommendation = finding?.categoryMismatch
+      ? undefined
+      : recommendationByRoom.get(photo.area);
+    const categoryMatchStatus = finding
+      ? finding.categoryMismatch
+        ? "Mismatch"
+        : "Match"
+      : "No result";
 
     return {
       photoId: photo.id,
       photoName: photo.name,
       previewUrl: photo.url,
       assignedRoom: photo.area,
-      visionRoom: finding?.roomType,
+      visionRoom: finding?.suggestedCategory,
+      categoryMatchStatus,
       condition: finding?.condition,
       confidence: finding?.confidence,
-      visibleFindings: dedupeVisibleFindings(finding?.opportunities ?? []),
+      visibleFindings: dedupeVisibleFindings(finding?.visibleFindings ?? []),
+      supportedRecommendations: dedupeVisibleFindings(
+        finding?.explicitlySupportedRecommendations ?? [],
+      ),
       selectedRecommendation: recommendation?.improvement.improvementName,
-      readinessContribution: observation
+      readinessContribution:
+        finding && hasConfirmedFinding(finding) && observation
         ? conditionToScore(observation.condition)
         : undefined,
       failure: photo.analysisFailure?.message,
