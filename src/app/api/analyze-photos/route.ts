@@ -3,24 +3,21 @@ import {
   CONFIDENCE_LEVELS,
   PROPERTY_CONDITIONS,
   ROOM_TYPES,
-  type ConfidenceLevel,
-  type PropertyCondition,
-  type RoomType,
 } from "@/lib/property-intelligence";
-
-type AnalyzePhotoInput = {
-  id: string;
-  name: string;
-  dataUrl: string;
-};
-
-type VisionFinding = {
-  photoId: string;
-  roomType: RoomType;
-  condition: PropertyCondition;
-  confidence: ConfidenceLevel;
-  opportunities: string[];
-};
+import {
+  PHOTO_UPLOAD_LIMITS,
+  type AnalyzePhotosResponse,
+  type AnalysisErrorCode,
+  type PhotoAnalysisFailure,
+  type PhotoAnalysisResult,
+  type ValidatedAnalyzePhotoInput,
+  type VisionFinding,
+  isSupportedCondition,
+  isSupportedConfidence,
+  isSupportedRoomType,
+  safeErrorMessage,
+  validateAnalyzePhotosBody,
+} from "@/lib/analysis-schema";
 
 type OpenAIContentPart = {
   type: string;
@@ -38,17 +35,9 @@ type VisionAnalysisJson = {
   findings?: Partial<VisionFinding>[];
 };
 
-type PipelineTraceEntry = {
-  stage:
-    | "api_route"
-    | "openai_request"
-    | "openai_response"
-    | "json_parser"
-    | "database_save";
-  status: "started" | "success" | "failure" | "skipped";
-  message: string;
-  data?: Record<string, unknown>;
-};
+const enableServerDebug =
+  process.env.NODE_ENV !== "production" &&
+  process.env.NEXT_PUBLIC_ENABLE_VISION_DEBUG === "true";
 
 const responseSchema = {
   type: "object",
@@ -82,16 +71,41 @@ const responseSchema = {
   },
 };
 
-function isSupportedRoomType(value: string): value is RoomType {
-  return ROOM_TYPES.includes(value as RoomType);
+function logDebug(message: string, data?: unknown) {
+  if (enableServerDebug) {
+    console.log("[ListingPilot Vision]", message, data ?? "");
+  }
 }
 
-function isSupportedCondition(value: string): value is PropertyCondition {
-  return PROPERTY_CONDITIONS.includes(value as PropertyCondition);
+function jsonResponse(
+  body: AnalyzePhotosResponse,
+  init?: ResponseInit,
+) {
+  return NextResponse.json(body, init);
 }
 
-function isSupportedConfidence(value: string): value is ConfidenceLevel {
-  return CONFIDENCE_LEVELS.includes(value as ConfidenceLevel);
+function buildErrorResponse({
+  code,
+  failedPhotos = [],
+  requestedPhotoCount = 0,
+  status,
+}: {
+  code: AnalysisErrorCode;
+  failedPhotos?: PhotoAnalysisFailure[];
+  requestedPhotoCount?: number;
+  status: number;
+}) {
+  return jsonResponse(
+    {
+      findings: [],
+      photoResults: failedPhotos,
+      failedPhotos,
+      requestedPhotoCount,
+      error: safeErrorMessage(code),
+      errorType: code,
+    },
+    { status },
+  );
 }
 
 function extractOutputText(response: OpenAIResponse) {
@@ -110,117 +124,109 @@ function extractOutputText(response: OpenAIResponse) {
 
 function normalizeFinding(
   finding: Partial<VisionFinding>,
-  fallbackPhotoId: string,
-): VisionFinding {
+): VisionFinding | null {
+  if (typeof finding.photoId !== "string") {
+    return null;
+  }
+
+  if (
+    typeof finding.roomType !== "string" ||
+    !isSupportedRoomType(finding.roomType)
+  ) {
+    return null;
+  }
+
+  if (
+    typeof finding.condition !== "string" ||
+    !isSupportedCondition(finding.condition)
+  ) {
+    return null;
+  }
+
+  if (
+    typeof finding.confidence !== "string" ||
+    !isSupportedConfidence(finding.confidence)
+  ) {
+    return null;
+  }
+
   return {
-    photoId:
-      typeof finding.photoId === "string" ? finding.photoId : fallbackPhotoId,
-    roomType:
-      typeof finding.roomType === "string" && isSupportedRoomType(finding.roomType)
-        ? finding.roomType
-        : "Living Room",
-    condition:
-      typeof finding.condition === "string" &&
-      isSupportedCondition(finding.condition)
-        ? finding.condition
-        : "Average",
-    confidence:
-      typeof finding.confidence === "string" &&
-      isSupportedConfidence(finding.confidence)
-        ? finding.confidence
-        : "Medium",
+    photoId: finding.photoId,
+    roomType: finding.roomType,
+    condition: finding.condition,
+    confidence: finding.confidence,
     opportunities: Array.isArray(finding.opportunities)
       ? finding.opportunities
           .filter(
             (opportunity): opportunity is string =>
               typeof opportunity === "string",
           )
-          .slice(0, 6)
+          .slice(0, PHOTO_UPLOAD_LIMITS.maxOpportunities)
       : [],
   };
 }
 
-function addTrace(
-  trace: PipelineTraceEntry[],
-  entry: PipelineTraceEntry,
-) {
-  trace.push(entry);
-  console.log("[ListingPilot Vision Trace]", entry);
+function buildFailure(
+  photo: Pick<ValidatedAnalyzePhotoInput, "id" | "name">,
+  errorType: AnalysisErrorCode,
+): PhotoAnalysisFailure {
+  return {
+    photoId: photo.id,
+    name: photo.name,
+    status: "failed",
+    errorType,
+    message: safeErrorMessage(errorType),
+  };
 }
 
-export async function POST(request: Request) {
-  const apiKey = process.env.OPENAI_API_KEY;
-  const trace: PipelineTraceEntry[] = [];
+function buildPhotoResults({
+  failedPhotos,
+  findings,
+  photos,
+}: {
+  failedPhotos: PhotoAnalysisFailure[];
+  findings: VisionFinding[];
+  photos: ValidatedAnalyzePhotoInput[];
+}) {
+  const findingsByPhotoId = new Map(
+    findings.map((finding) => [finding.photoId, finding]),
+  );
+  const results: PhotoAnalysisResult[] = [...failedPhotos];
+  const missingFindings: PhotoAnalysisFailure[] = [];
 
-  if (!apiKey) {
-    addTrace(trace, {
-      stage: "api_route",
-      status: "failure",
-      message: "OPENAI_API_KEY is not configured.",
-    });
+  photos.forEach((photo) => {
+    const finding = findingsByPhotoId.get(photo.id);
 
-    return NextResponse.json(
-      {
-        error: "OPENAI_API_KEY is not configured.",
-        errorType: "missing_api_key",
-        trace,
-      },
-      { status: 500 },
-    );
-  }
+    if (finding) {
+      results.push({
+        photoId: photo.id,
+        name: photo.name,
+        status: "success",
+        finding,
+      });
+      return;
+    }
 
-  let body: { photos?: AnalyzePhotoInput[] };
-
-  try {
-    body = (await request.json()) as { photos?: AnalyzePhotoInput[] };
-  } catch (error) {
-    addTrace(trace, {
-      stage: "api_route",
-      status: "failure",
-      message: "Vision request JSON could not be parsed.",
-      data: { error: error instanceof Error ? error.message : String(error) },
-    });
-
-    return NextResponse.json(
-      {
-        error: "Vision request JSON could not be parsed.",
-        errorType: "image_processing_failure",
-        trace,
-      },
-      { status: 400 },
-    );
-  }
-
-  const photos = body.photos?.slice(0, 30) ?? [];
-  const model = process.env.OPENAI_VISION_MODEL ?? "gpt-4.1-mini";
-
-  addTrace(trace, {
-    stage: "api_route",
-    status: "success",
-    message: "API route received uploaded image payload.",
-    data: {
-      model,
-      requestedPhotoCount: photos.length,
-      photoNames: photos.map((photo) => photo.name),
-    },
+    const failure = buildFailure(photo, "no_analysis_result");
+    missingFindings.push(failure);
+    results.push(failure);
   });
 
-  if (photos.length === 0) {
-    addTrace(trace, {
-      stage: "openai_request",
-      status: "skipped",
-      message: "No uploaded images were provided.",
-    });
+  return {
+    results,
+    missingFindings,
+  };
+}
 
-    return NextResponse.json({
-      findings: [],
-      rawVisionJson: { findings: [] },
-      model,
-      requestedPhotoCount: 0,
-      trace,
-    });
-  }
-
+async function callOpenAI({
+  apiKey,
+  model,
+  photos,
+}: {
+  apiKey: string;
+  model: string;
+  photos: ValidatedAnalyzePhotoInput[];
+}) {
   const content = [
     {
       type: "input_text",
@@ -230,7 +236,7 @@ Return one finding per image. Use only these roomType values: ${ROOM_TYPES.join(
 Use only these condition values: ${PROPERTY_CONDITIONS.join(", ")}.
 Use only these confidence values: ${CONFIDENCE_LEVELS.join(", ")}.
 
-Visible opportunities should be concise phrases such as cabinet hardware, lighting, paint, decluttering, landscaping cleanup, curb appeal, flooring, caulk, staging, fixture update, pressure washing, or storage organization.
+Visible opportunities should be concise photo-grounded phrases such as cabinet hardware, lighting, paint, decluttering, landscaping cleanup, curb appeal, flooring, caulk, staging, fixture update, pressure washing, pool cleaning, or storage organization.
 If the image is unclear, use the closest room type, a conservative condition, and Low confidence.
 Each image is labeled with its photoId immediately before the image. Copy that exact photoId into the structured output.`,
     },
@@ -247,170 +253,192 @@ Each image is labeled with its photoId immediately before the image. Copy that e
     ]),
   ];
 
-  let response: Response;
+  return fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model,
+      input: [
+        {
+          role: "user",
+          content,
+        },
+      ],
+      text: {
+        format: {
+          type: "json_schema",
+          name: "listingpilot_photo_analysis",
+          schema: responseSchema,
+          strict: true,
+        },
+      },
+    }),
+  });
+}
+
+export async function POST(request: Request) {
+  const apiKey = process.env.OPENAI_API_KEY;
+  const model = process.env.OPENAI_VISION_MODEL ?? "gpt-4.1-mini";
+
+  if (!apiKey) {
+    logDebug("OPENAI_API_KEY is missing.");
+    return buildErrorResponse({
+      code: "missing_api_key",
+      status: 500,
+    });
+  }
+
+  let body: unknown;
 
   try {
-    addTrace(trace, {
-      stage: "openai_request",
-      status: "started",
-      message: "Sending image analysis request to OpenAI.",
-      data: {
-        model,
-        photoCount: photos.length,
-        imagePartCount: photos.length,
-      },
+    body = await request.json();
+  } catch (error) {
+    logDebug("Request JSON parse failed.", error);
+    return buildErrorResponse({
+      code: "malformed_request",
+      status: 400,
     });
+  }
 
-    response = await fetch("https://api.openai.com/v1/responses", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model,
-        input: [
-          {
-            role: "user",
-            content,
-          },
-        ],
-        text: {
-          format: {
-            type: "json_schema",
-            name: "listingpilot_photo_analysis",
-            schema: responseSchema,
-            strict: true,
-          },
-        },
-      }),
+  const {
+    failedPhotos: validationFailures,
+    requestIssues,
+    requestedPhotoCount,
+    validPhotos,
+  } = validateAnalyzePhotosBody(body);
+
+  if (requestIssues.length > 0) {
+    const primaryIssue = requestIssues[0];
+
+    logDebug("Request validation failed.", requestIssues);
+    return buildErrorResponse({
+      code: primaryIssue.code,
+      requestedPhotoCount,
+      status: 400,
     });
+  }
 
-    addTrace(trace, {
-      stage: "openai_response",
-      status: response.ok ? "success" : "failure",
-      message: "OpenAI returned an HTTP response.",
-      data: {
-        status: response.status,
-        ok: response.ok,
-      },
+  if (validPhotos.length === 0) {
+    const failedPhotos =
+      validationFailures.length > 0
+        ? validationFailures
+        : [
+            {
+              photoId: "unknown",
+              name: "Uploaded photo",
+              status: "failed" as const,
+              errorType: "no_photos" as const,
+              message: safeErrorMessage("no_photos"),
+            },
+          ];
+
+    return buildErrorResponse({
+      code: failedPhotos[0].errorType,
+      failedPhotos,
+      requestedPhotoCount,
+      status: 400,
+    });
+  }
+
+  let providerResponse: Response;
+
+  try {
+    providerResponse = await callOpenAI({
+      apiKey,
+      model,
+      photos: validPhotos,
     });
   } catch (error) {
-    addTrace(trace, {
-      stage: "openai_request",
-      status: "failure",
-      message: "OpenAI request failed before a response was returned.",
-      data: { error: error instanceof Error ? error.message : String(error) },
-    });
-
-    return NextResponse.json(
-      {
-        error: "OpenAI Vision request failed before a response was returned.",
-        errorType: "api_request_failure",
-        detail: error instanceof Error ? error.message : String(error),
-        trace,
-      },
-      { status: 502 },
+    logDebug("OpenAI request failed before response.", error);
+    const failedPhotos = validPhotos.map((photo) =>
+      buildFailure(photo, "provider_unavailable"),
     );
+
+    return buildErrorResponse({
+      code: "provider_unavailable",
+      failedPhotos: [...validationFailures, ...failedPhotos],
+      requestedPhotoCount,
+      status: 502,
+    });
   }
 
-  if (!response.ok) {
-    const errorText = await response.text();
+  if (!providerResponse.ok) {
+    const providerDetail = await providerResponse.text().catch(() => "");
     const errorType =
-      response.status === 429 ? "rate_limit_issue" : "api_request_failure";
+      providerResponse.status === 429
+        ? "provider_rate_limited"
+        : "provider_unavailable";
 
-    addTrace(trace, {
-      stage: "openai_response",
-      status: "failure",
-      message: "OpenAI response was not successful.",
-      data: {
-        status: response.status,
-        errorType,
-        detail: errorText,
-      },
+    logDebug("OpenAI returned an error response.", {
+      status: providerResponse.status,
+      detail: providerDetail,
     });
 
-    return NextResponse.json(
-      {
-        error: "OpenAI Vision analysis failed.",
-        errorType,
-        detail: errorText,
-        trace,
-      },
-      { status: response.status },
+    const failedPhotos = validPhotos.map((photo) =>
+      buildFailure(photo, errorType),
     );
+
+    return buildErrorResponse({
+      code: errorType,
+      failedPhotos: [...validationFailures, ...failedPhotos],
+      requestedPhotoCount,
+      status: providerResponse.status === 429 ? 429 : 502,
+    });
   }
 
-  const data = (await response.json()) as OpenAIResponse;
+  const data = (await providerResponse.json()) as OpenAIResponse;
   const outputText = extractOutputText(data);
-  addTrace(trace, {
-    stage: "openai_response",
-    status: "success",
-    message: "OpenAI response body was read.",
-    data: {
-      hasOutputText: Boolean(outputText),
-      outputTextLength: outputText.length,
-    },
-  });
-
   let parsed: VisionAnalysisJson;
 
   try {
     parsed = JSON.parse(outputText) as VisionAnalysisJson;
   } catch (error) {
-    addTrace(trace, {
-      stage: "json_parser",
-      status: "failure",
-      message: "OpenAI Vision JSON response could not be parsed.",
-      data: {
-        error: error instanceof Error ? error.message : String(error),
-        rawOutputText: outputText,
-      },
+    logDebug("OpenAI JSON could not be parsed.", {
+      error,
+      outputText,
     });
 
-    return NextResponse.json(
-      {
-        error: "OpenAI Vision JSON response could not be parsed.",
-        errorType: "json_parsing_failure",
-        rawOutputText: outputText,
-        trace,
-      },
-      { status: 502 },
+    const failedPhotos = validPhotos.map((photo) =>
+      buildFailure(photo, "provider_response_invalid"),
     );
+
+    return buildErrorResponse({
+      code: "provider_response_invalid",
+      failedPhotos: [...validationFailures, ...failedPhotos],
+      requestedPhotoCount,
+      status: 502,
+    });
   }
 
-  addTrace(trace, {
-    stage: "json_parser",
-    status: "success",
-    message: "OpenAI structured JSON was parsed.",
-    data: {
-      returnedFindingCount: parsed.findings?.length ?? 0,
-      parsed,
-    },
-  });
-
-  const findingsByPhotoId = new Map(
-    parsed.findings?.map((finding) => [finding.photoId, finding]) ?? [],
-  );
-  const findings = photos.map((photo) =>
-    normalizeFinding(
-      findingsByPhotoId.get(photo.id) ?? { photoId: photo.id },
-      photo.id,
-    ),
-  );
-
-  addTrace(trace, {
-    stage: "database_save",
-    status: "skipped",
-    message: "No database save exists in this MVP; results remain in client state only.",
-  });
-
-  return NextResponse.json({
+  const validPhotoIds = new Set(validPhotos.map((photo) => photo.id));
+  const findings =
+    parsed.findings
+      ?.map(normalizeFinding)
+      .filter((finding): finding is VisionFinding =>
+        Boolean(finding && validPhotoIds.has(finding.photoId)),
+      ) ?? [];
+  const { missingFindings, results } = buildPhotoResults({
+    failedPhotos: validationFailures,
     findings,
-    rawVisionJson: parsed,
-    rawOutputText: outputText,
+    photos: validPhotos,
+  });
+  const failedPhotos = [...validationFailures, ...missingFindings];
+
+  return jsonResponse({
+    findings,
+    photoResults: results,
+    failedPhotos,
     model,
-    requestedPhotoCount: photos.length,
-    trace,
+    requestedPhotoCount,
+    debug: enableServerDebug
+      ? {
+          returnedFindingCount: parsed.findings?.length ?? 0,
+          successfulFindingCount: findings.length,
+          failedPhotoCount: failedPhotos.length,
+        }
+      : undefined,
   });
 }

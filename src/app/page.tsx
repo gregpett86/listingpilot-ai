@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, DragEvent, useMemo, useState } from "react";
+import { ChangeEvent, DragEvent, useEffect, useMemo, useRef, useState } from "react";
 import { jsPDF } from "jspdf";
 import {
   RealtyEdgePageHeader,
@@ -26,6 +26,17 @@ import {
   type RecommendationPriority,
   type RoomType,
 } from "@/lib/property-intelligence";
+import {
+  PHOTO_UPLOAD_LIMITS,
+  SUPPORTED_IMAGE_MIME_TYPES,
+  type AnalysisValidationIssue,
+  type AnalyzePhotosResponse,
+  type PhotoAnalysisFailure,
+  type VisionFinding,
+  formatBytes,
+  safeErrorMessage,
+  validateClientPhotoFiles,
+} from "@/lib/analysis-schema";
 
 type PhotoItem = {
   id: string;
@@ -36,6 +47,7 @@ type PhotoItem = {
   classificationConfidence: number;
   matchedKeywords: string[];
   file: File;
+  analysisFailure?: PhotoAnalysisFailure;
 };
 
 type AreaFinding = {
@@ -78,12 +90,7 @@ const recommendedCoverageCategories = [
   "Bedroom",
   "Exterior",
 ] as const;
-const optionalCoverageCategories = [
-  "Landscaping",
-  "Garage",
-  "Basement",
-  "Pool",
-] as const;
+const optionalCoverageCategories = ["Landscaping", "Garage", "Basement", "Pool"] as const;
 const coverageCategories = [
   ...recommendedCoverageCategories,
   ...optionalCoverageCategories,
@@ -93,30 +100,7 @@ type CoverageCategory = (typeof coverageCategories)[number];
 type CoverageStatus = "Complete" | "Partial" | "Missing";
 type CoverageScore = "Excellent" | "Good" | "Limited";
 
-type VisionFinding = {
-  photoId: string;
-  roomType: RoomType;
-  condition: PropertyCondition;
-  confidence: ConfidenceLevel;
-  opportunities: string[];
-};
-
-type VisionAnalysisResponse = {
-  findings?: VisionFinding[];
-  rawVisionJson?: unknown;
-  rawOutputText?: string;
-  model?: string;
-  requestedPhotoCount?: number;
-  trace?: PipelineTraceEntry[];
-  error?: string;
-  errorType?:
-    | "missing_api_key"
-    | "api_request_failure"
-    | "image_processing_failure"
-    | "json_parsing_failure"
-    | "rate_limit_issue";
-  detail?: string;
-};
+type VisionAnalysisResponse = AnalyzePhotosResponse;
 
 type PipelineTraceEntry = {
   stage:
@@ -147,6 +131,10 @@ const confidenceScores: Record<ConfidenceLevel, number> = {
   Low: 0.3,
 };
 
+const enableVisionDebug =
+  process.env.NODE_ENV !== "production" &&
+  process.env.NEXT_PUBLIC_ENABLE_VISION_DEBUG === "true";
+
 function isRoomCoverageCategory(
   category: CoverageCategory,
 ): category is RoomType {
@@ -154,20 +142,6 @@ function isRoomCoverageCategory(
 }
 
 function countCoveragePhotos(photos: PhotoItem[], category: CoverageCategory) {
-  if (category === "Pool") {
-    return photos.filter((photo) => {
-      const searchable = [photo.name, ...photo.matchedKeywords]
-        .join(" ")
-        .toLowerCase();
-
-      return (
-        searchable.includes("pool") ||
-        searchable.includes("spa") ||
-        searchable.includes("swimming")
-      );
-    }).length;
-  }
-
   return isRoomCoverageCategory(category)
     ? photos.filter((photo) => photo.area === category).length
     : 0;
@@ -191,11 +165,6 @@ function calculateCoverageScore({
   if (photoCount >= 20 && recommendedMissingCount === 0) return "Excellent";
   if (photoCount >= 6 || recommendedPartialOrCompleteCount >= 3) return "Good";
   return "Limited";
-}
-
-function formatBytes(bytes: number) {
-  const megabytes = bytes / 1024 / 1024;
-  return `${megabytes.toFixed(megabytes >= 10 ? 0 : 1)} MB`;
 }
 
 function formatCurrencyRange(range: CostRange) {
@@ -558,10 +527,23 @@ export default function Home() {
   const [analysisConfidence, setAnalysisConfidence] =
     useState<ConfidenceLevel>("Low");
   const [analysisError, setAnalysisError] = useState("");
+  const [uploadIssues, setUploadIssues] = useState<AnalysisValidationIssue[]>(
+    [],
+  );
   const [visionDebugResponse, setVisionDebugResponse] =
     useState<VisionAnalysisResponse | null>(null);
   const [pipelineTrace, setPipelineTrace] = useState<PipelineTraceEntry[]>([]);
   const [report, setReport] = useState<OptimizationReport | null>(null);
+  const objectUrlsRef = useRef(new Set<string>());
+
+  useEffect(() => {
+    const objectUrls = objectUrlsRef.current;
+
+    return () => {
+      objectUrls.forEach((url) => URL.revokeObjectURL(url));
+      objectUrls.clear();
+    };
+  }, []);
 
   const photoCounts = useMemo(
     () =>
@@ -641,6 +623,10 @@ export default function Home() {
       return flags;
     });
   }, [photos, visionDebugResponse, visionFindingsByPhotoId]);
+  const failedAnalysisPhotos = useMemo(
+    () => photos.filter((photo) => photo.analysisFailure),
+    [photos],
+  );
 
   function resetAnalysisState() {
     setFindings([]);
@@ -654,38 +640,33 @@ export default function Home() {
   }
 
   function appendPhotoFiles(files: File[]) {
-    console.groupCollapsed("[ListingPilot upload] appendPhotoFiles");
-    console.log("incoming files", files.length, files.map((file) => file.name));
-    console.log("photos before append", photos.length);
-
-    const imageFiles = files.filter((file) => file.type.startsWith("image/"));
-    console.log(
-      "image files",
-      imageFiles.length,
-      imageFiles.map((file) => file.name),
+    const existingKeys = new Set(
+      photos.map((photo) => `${photo.name}:${photo.size}:${photo.file.type}`),
     );
+    const currentTotalBytes = photos.reduce((sum, photo) => sum + photo.size, 0);
+    const { accepted, issues } = validateClientPhotoFiles({
+      currentPhotoCount: photos.length,
+      currentTotalBytes,
+      existingKeys,
+      files,
+    });
 
-    if (imageFiles.length === 0) {
-      console.log("no image files found; upload queue unchanged");
-      console.groupEnd();
-      return;
-    }
+    setUploadIssues(issues);
 
-    if (photos.length >= 30) {
-      console.log("photo queue already at 30; upload queue unchanged");
-      console.groupEnd();
+    if (accepted.length === 0) {
       return;
     }
 
     setPhotos((currentPhotos) => {
-      const remainingSlots = Math.max(30 - currentPhotos.length, 0);
       const uploadBatchId = Date.now();
-      const nextPhotos = imageFiles
-        .slice(0, remainingSlots)
-        .map((file, index) => ({
+      const nextPhotos = accepted.map((file, index) => {
+        const url = URL.createObjectURL(file);
+        objectUrlsRef.current.add(url);
+
+        return {
           id: `${file.name}-${file.lastModified}-${index}`,
           name: file.name,
-          url: URL.createObjectURL(file),
+          url,
           size: file.size,
           area:
             propertyAreas[
@@ -694,31 +675,21 @@ export default function Home() {
           classificationConfidence: 0.2,
           matchedKeywords: [],
           file,
-        }));
+        };
+      });
       const appendedPhotos = nextPhotos.map((photo, index) => ({
         ...photo,
         id: `${photo.id}-${uploadBatchId}-${currentPhotos.length + index}`,
       }));
 
-      console.log("current photos in updater", currentPhotos.length);
-      console.log("remaining slots", remainingSlots);
-      console.log("appending photos", appendedPhotos.length);
-      console.log("next queue size", currentPhotos.length + appendedPhotos.length);
-
       return [...currentPhotos, ...appendedPhotos];
     });
     resetAnalysisState();
-    console.groupEnd();
   }
 
   function handlePhotoUpload(event: ChangeEvent<HTMLInputElement>) {
     const selectedFiles = Array.from(event.target.files ?? []);
 
-    console.log(
-      "[ListingPilot upload] file input change",
-      selectedFiles.length,
-      selectedFiles.map((file) => file.name),
-    );
     appendPhotoFiles(selectedFiles);
     event.target.value = "";
   }
@@ -727,11 +698,6 @@ export default function Home() {
     event.preventDefault();
     const droppedFiles = Array.from(event.dataTransfer.files);
 
-    console.log(
-      "[ListingPilot upload] drop",
-      droppedFiles.length,
-      droppedFiles.map((file) => file.name),
-    );
     appendPhotoFiles(droppedFiles);
   }
 
@@ -759,36 +725,118 @@ export default function Home() {
     setReport(null);
   }
 
-  async function analyzePhotos() {
+  async function validateReadableImage(file: File) {
+    if (typeof createImageBitmap !== "function") {
+      return true;
+    }
+
+    try {
+      const bitmap = await createImageBitmap(file);
+      bitmap.close();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function mergeFindings(
+    existingFindings: VisionFinding[],
+    nextFindings: VisionFinding[],
+    retriedPhotoIds: Set<string>,
+  ) {
+    const merged = new Map(
+      existingFindings
+        .filter((finding) => !retriedPhotoIds.has(finding.photoId))
+        .map((finding) => [finding.photoId, finding]),
+    );
+
+    nextFindings.forEach((finding) => {
+      merged.set(finding.photoId, finding);
+    });
+
+    return Array.from(merged.values());
+  }
+
+  async function analyzePhotos(targetPhotoIds?: Set<string>) {
+    const photosToAnalyze = targetPhotoIds
+      ? photos.filter((photo) => targetPhotoIds.has(photo.id))
+      : photos;
+
+    if (photosToAnalyze.length === 0) {
+      setAnalysisError("No failed photos are available to retry.");
+      return;
+    }
+
     setIsAnalyzing(true);
     setAnalysisError("");
-    setVisionDebugResponse(null);
-    setPipelineTrace([]);
+    if (!enableVisionDebug && !targetPhotoIds) {
+      setVisionDebugResponse(null);
+      setPipelineTrace([]);
+    }
     let visionLogOpen = false;
     const localTrace: PipelineTraceEntry[] = [];
     const recordTrace = (entry: PipelineTraceEntry) => {
       localTrace.push(entry);
-      console.log("[ListingPilot Pipeline Trace]", entry);
-      setPipelineTrace([...localTrace]);
+      if (enableVisionDebug) {
+        console.log("[ListingPilot Pipeline Trace]", entry);
+        setPipelineTrace([...localTrace]);
+      }
     };
 
     try {
       recordTrace({
         stage: "button_click",
         status: "started",
-        message: "Run AI Analysis button clicked.",
+        message: targetPhotoIds
+          ? "Retry failed photo analysis clicked."
+          : "Run AI Analysis button clicked.",
         data: {
-          photoCount: photos.length,
-          photoNames: photos.map((photo) => photo.name),
+          photoCount: photosToAnalyze.length,
+          photoNames: photosToAnalyze.map((photo) => photo.name),
         },
       });
 
+      const unreadablePhotos: PhotoAnalysisFailure[] = [];
+      const readablePhotos: PhotoItem[] = [];
+
+      for (const photo of photosToAnalyze) {
+        if (await validateReadableImage(photo.file)) {
+          readablePhotos.push(photo);
+        } else {
+          unreadablePhotos.push({
+            photoId: photo.id,
+            name: photo.name,
+            status: "failed",
+            errorType: "image_decode_failed",
+            message: safeErrorMessage("image_decode_failed"),
+          });
+        }
+      }
+
+      if (readablePhotos.length === 0) {
+        setPhotos((currentPhotos) =>
+          currentPhotos.map((photo) => ({
+            ...photo,
+            analysisFailure:
+              unreadablePhotos.find((failure) => failure.photoId === photo.id) ??
+              photo.analysisFailure,
+          })),
+        );
+        throw new Error("No readable photos were available for analysis.");
+      }
+
       const payloadPhotos = await Promise.all(
-        photos.map(async (photo) => ({
-          id: photo.id,
-          name: photo.name,
-          dataUrl: await fileToDataUrl(photo.file),
-        })),
+        readablePhotos.map(async (photo) => {
+          const dataUrl = await fileToDataUrl(photo.file);
+
+          return {
+            id: photo.id,
+            name: photo.name,
+            fileMimeType: photo.file.type,
+            fileSize: photo.file.size,
+            dataUrl,
+          };
+        }),
       );
       recordTrace({
         stage: "frontend_request",
@@ -802,13 +850,15 @@ export default function Home() {
         },
       });
 
-      console.groupCollapsed("[ListingPilot Vision] analyzePhotos");
-      console.log("calling /api/analyze-photos", {
-        photoCount: payloadPhotos.length,
-        photoIds: payloadPhotos.map((photo) => photo.id),
-        photoNames: payloadPhotos.map((photo) => photo.name),
-      });
-      visionLogOpen = true;
+      if (enableVisionDebug) {
+        console.groupCollapsed("[ListingPilot Vision] analyzePhotos");
+        console.log("calling /api/analyze-photos", {
+          photoCount: payloadPhotos.length,
+          photoIds: payloadPhotos.map((photo) => photo.id),
+          photoNames: payloadPhotos.map((photo) => photo.name),
+        });
+        visionLogOpen = true;
+      }
 
       const response = await fetch("/api/analyze-photos", {
         method: "POST",
@@ -816,7 +866,6 @@ export default function Home() {
         body: JSON.stringify({ photos: payloadPhotos }),
       });
 
-      console.log("Vision route response status", response.status);
       recordTrace({
         stage: "frontend_request",
         status: response.ok ? "success" : "failure",
@@ -833,42 +882,56 @@ export default function Home() {
           | VisionAnalysisResponse
           | null;
 
-        console.error("Vision route error", errorBody);
-        setVisionDebugResponse(errorBody);
-        setPipelineTrace([
-          ...localTrace,
-          ...(errorBody?.trace ?? []),
-          {
-            stage: "ui_render",
-            status: "failure",
-            message: "UI received Vision error response.",
-            data: { error: errorBody?.error },
-          },
-        ]);
+        if (enableVisionDebug) {
+          console.error("Vision route error", errorBody);
+          setVisionDebugResponse(errorBody);
+          setPipelineTrace([
+            ...localTrace,
+            {
+              stage: "ui_render",
+              status: "failure",
+              message: "UI received Vision error response.",
+              data: { error: errorBody?.error },
+            },
+          ]);
+        }
 
         throw new Error(errorBody?.error ?? "AI Vision analysis failed.");
       }
 
       const result = (await response.json()) as VisionAnalysisResponse;
-      console.log("Vision route JSON", result);
-      console.groupEnd();
-      visionLogOpen = false;
-      setVisionDebugResponse(result);
-      setPipelineTrace([
-        ...localTrace,
-        ...(result.trace ?? []),
-        {
-          stage: "ui_render",
-          status: "started",
-          message: "Frontend received parsed Vision JSON and is preparing UI state.",
-          data: {
-            parsedOutput: result.rawVisionJson,
-            findingCount: result.findings?.length ?? 0,
+      if (enableVisionDebug) {
+        console.log("Vision route JSON", result);
+        console.groupEnd();
+        visionLogOpen = false;
+        setVisionDebugResponse(result);
+        setPipelineTrace([
+          ...localTrace,
+          {
+            stage: "ui_render",
+            status: "started",
+            message: "Frontend received parsed Vision JSON and is preparing UI state.",
+            data: {
+              findingCount: result.findings?.length ?? 0,
+              failedPhotoCount: result.failedPhotos?.length ?? 0,
+            },
           },
-        },
-      ]);
+        ]);
+      }
 
-      const visionFindings = result.findings ?? [];
+      const retriedPhotoIds = new Set(photosToAnalyze.map((photo) => photo.id));
+      const previousFindings = targetPhotoIds
+        ? visionDebugResponse?.findings ?? []
+        : [];
+      const visionFindings = mergeFindings(
+        previousFindings,
+        result.findings ?? [],
+        retriedPhotoIds,
+      );
+      const failedPhotos = [...unreadablePhotos, ...(result.failedPhotos ?? [])];
+      const failedByPhotoId = new Map(
+        failedPhotos.map((failure) => [failure.photoId, failure]),
+      );
       const confidenceByPhotoId = new Map(
         visionFindings.map((finding) => [
           finding.photoId,
@@ -887,18 +950,29 @@ export default function Home() {
           const finding = visionFindings.find(
             (visionFinding) => visionFinding.photoId === photo.id,
           );
+          const failure = failedByPhotoId.get(photo.id);
 
-          return finding
-            ? {
-                ...photo,
-                area: finding.roomType,
-                classificationConfidence:
-                  confidenceByPhotoId.get(photo.id) ??
-                  photo.classificationConfidence,
-                matchedKeywords:
-                  opportunitiesByPhotoId.get(photo.id) ?? photo.matchedKeywords,
-              }
-            : photo;
+          if (finding) {
+            return {
+              ...photo,
+              area: finding.roomType,
+              classificationConfidence:
+                confidenceByPhotoId.get(photo.id) ??
+                photo.classificationConfidence,
+              matchedKeywords:
+                opportunitiesByPhotoId.get(photo.id) ?? photo.matchedKeywords,
+              analysisFailure: undefined,
+            };
+          }
+
+          if (failure) {
+            return {
+              ...photo,
+              analysisFailure: failure,
+            };
+          }
+
+          return photo;
         }),
       );
 
@@ -923,27 +997,39 @@ export default function Home() {
       setReadinessScore(nextReadinessScore);
       setAnalysisConfidence(nextAnalysisConfidence);
       setReport(null);
-      setPipelineTrace([
-        ...localTrace,
-        ...(result.trace ?? []),
-        {
-          stage: "ui_render",
-          status: "success",
-          message: "UI state updated with Vision findings, recommendations, and readiness score.",
-          data: {
-            findingsRendered: visionFindings.length,
-            observationsCreated: nextObservations.length,
-            recommendationsCreated: nextRecommendations.length,
+      if (failedPhotos.length > 0) {
+        setAnalysisError(
+          `${failedPhotos.length} photo${failedPhotos.length === 1 ? "" : "s"} could not be analyzed. Successful findings were preserved.`,
+        );
+      }
+      setVisionDebugResponse({
+        ...result,
+        findings: visionFindings,
+        failedPhotos,
+      });
+      if (enableVisionDebug) {
+        setPipelineTrace([
+          ...localTrace,
+          {
+            stage: "ui_render",
+            status: "success",
+            message:
+              "UI state updated with Vision findings, recommendations, and readiness score.",
+            data: {
+              findingsRendered: visionFindings.length,
+              observationsCreated: nextObservations.length,
+              recommendationsCreated: nextRecommendations.length,
+            },
           },
-        },
-      ]);
+        ]);
+      }
     } catch (error) {
       setAnalysisError(
         error instanceof Error
           ? error.message
           : "AI Vision analysis could not be completed.",
       );
-      if (localTrace.length > 0) {
+      if (enableVisionDebug && localTrace.length > 0) {
         setPipelineTrace((currentTrace) => [
           ...currentTrace,
           {
@@ -956,7 +1042,7 @@ export default function Home() {
           },
         ]);
       }
-      if (visionLogOpen) {
+      if (enableVisionDebug && visionLogOpen) {
         console.groupEnd();
       }
     } finally {
@@ -994,16 +1080,6 @@ export default function Home() {
         : "none";
   const runAnalysisButtonEnabled = buttonDisabledReason === "none";
   const recommendedCountMet = photos.length >= 20 && photos.length <= 30;
-
-  console.log("[ListingPilot analysis button state]", {
-    uploadedPhotoCount,
-    categorizedPhotoCount,
-    coverageScore: photoCoverageScore,
-    missingCategories,
-    analysisInProgress,
-    buttonDisabledReason,
-    buttonEnabled: runAnalysisButtonEnabled,
-  });
 
   return (
     <RealtyEdgeShell>
@@ -1047,16 +1123,26 @@ export default function Home() {
                     Select or drag property photos
                   </span>
                   <span className="mt-1 text-xs font-medium text-[#6B7280]">
-                    JPG, PNG, or WebP. Up to 30 images.
+                    JPEG, PNG, or WebP. Up to {PHOTO_UPLOAD_LIMITS.maxPhotos} images, {formatBytes(PHOTO_UPLOAD_LIMITS.maxBytesPerPhoto)} each.
                   </span>
                   <input
-                    accept="image/*"
+                    accept={SUPPORTED_IMAGE_MIME_TYPES.join(",")}
                     className="sr-only"
                     multiple
                     onChange={handlePhotoUpload}
                     type="file"
                   />
                 </label>
+                {uploadIssues.length > 0 && (
+                  <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
+                    {uploadIssues.map((issue) => (
+                      <p key={`${issue.code}-${issue.photoName ?? "request"}`}>
+                        {issue.photoName ? `${issue.photoName}: ` : ""}
+                        {issue.message}
+                      </p>
+                    ))}
+                  </div>
+                )}
 
                 <div className="mt-4 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-2.5">
                   <div className="flex items-center justify-between text-sm">
@@ -1070,7 +1156,9 @@ export default function Home() {
                           : "font-bold text-[#B45309]"
                       }
                     >
-                      {recommendedCountMet ? "Met" : "20-30 photos"}
+                      {recommendedCountMet
+                        ? "Met"
+                        : `20-${PHOTO_UPLOAD_LIMITS.maxPhotos} photos`}
                     </span>
                   </div>
                 </div>
@@ -1142,6 +1230,7 @@ export default function Home() {
                   )}
                 </div>
 
+                {enableVisionDebug && (
                 <div className="mt-5 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-2.5">
                   <div className="space-y-2 text-sm">
                     <div className="flex items-center justify-between gap-3">
@@ -1178,15 +1267,32 @@ export default function Home() {
                     </div>
                   </div>
                 </div>
+                )}
 
                 <button
                   className="btn-press mt-5 flex w-full items-center justify-center rounded-xl bg-[#D4A017] px-5 py-3 text-sm font-extrabold text-[#111827] shadow-[0_2px_8px_rgba(212,160,23,0.3)] transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
                   disabled={!runAnalysisButtonEnabled}
-                  onClick={analyzePhotos}
+                  onClick={() => analyzePhotos()}
                   type="button"
                 >
                   {isAnalyzing ? "Analyzing photos..." : "Run AI Analysis"}
                 </button>
+                {failedAnalysisPhotos.length > 0 && (
+                  <button
+                    className="btn-press mt-3 flex w-full items-center justify-center rounded-xl border border-[#D4A017] bg-white px-5 py-3 text-sm font-extrabold text-[#92640a] transition hover:bg-[#FDF9EE] disabled:cursor-not-allowed disabled:opacity-40"
+                    disabled={isAnalyzing}
+                    onClick={() =>
+                      analyzePhotos(
+                        new Set(
+                          failedAnalysisPhotos.map((photo) => photo.id),
+                        ),
+                      )
+                    }
+                    type="button"
+                  >
+                    Retry Failed Photos
+                  </button>
+                )}
                 {analysisError && (
                   <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
                     {analysisError}
@@ -1290,6 +1396,11 @@ export default function Home() {
                               </option>
                             ))}
                           </select>
+                          {photo.analysisFailure && (
+                            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">
+                              {photo.analysisFailure.message}
+                            </div>
+                          )}
                         </div>
                       </article>
                     ))}
@@ -1297,7 +1408,8 @@ export default function Home() {
                 )}
               </SectionCard>
 
-              {(visionDebugResponse || analysisError || pipelineTrace.length > 0) && (
+              {enableVisionDebug &&
+                (visionDebugResponse || analysisError || pipelineTrace.length > 0) && (
                 <SectionCard>
                   <div>
                     <p className="label-caps text-[#B45309]">
@@ -1373,11 +1485,6 @@ export default function Home() {
                       <p className="mt-2 text-sm leading-6 text-red-700">
                         {visionDebugResponse.error}
                       </p>
-                      {visionDebugResponse.detail && (
-                        <pre className="mt-3 max-h-44 overflow-auto rounded-lg bg-white p-3 text-xs text-red-700">
-                          {visionDebugResponse.detail}
-                        </pre>
-                      )}
                     </div>
                   )}
 

@@ -7,6 +7,7 @@ export const ROOM_TYPES = [
   "Landscaping",
   "Garage",
   "Basement",
+  "Pool",
 ] as const;
 
 export const PROPERTY_CONDITIONS = [

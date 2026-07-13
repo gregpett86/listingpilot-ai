@@ -139,6 +139,13 @@ const roomSeeds: Record<RoomType, ImprovementSeed[]> = {
     seed("Functional zone staging", "Define a gym, media, storage, or flex zone with simple staging.", [250, 1800], [900, 4500], "Low", 34, ["Defined zones help buyers understand basement potential."]),
     seed("Foundation crack review", "Review and repair visible foundation cracks or settlement indicators.", [500, 5000], [2000, 12000], "Medium", 88, ["Addressing visible foundation concerns can reduce buyer uncertainty."]),
   ],
+  Pool: [
+    seed("Pool surface cleaning", "Clean visible pool surfaces, waterline tile, coping, and nearby hardscape before photos.", [250, 1500], [1000, 5000], "High", 76, ["A clean pool area makes outdoor living feel easier for buyers to trust."]),
+    seed("Water clarity service", "Balance water chemistry and improve visible water clarity before listing photography.", [150, 900], [800, 3500], "High", 72, ["Clear water helps the pool read as an asset instead of a maintenance concern."]),
+    seed("Pool deck touch-up", "Repair obvious staining, cracks, or trip hazards around the pool deck.", [500, 4500], [2000, 10000], "Medium", 82, ["A cleaner pool deck supports the outdoor entertaining story."]),
+    seed("Pool furniture staging", "Edit worn furniture and stage the pool area with simple seating or towels.", [150, 1200], [700, 3500], "Medium", 46, ["Light staging helps buyers picture the pool as usable living space."]),
+    seed("Equipment area organization", "Clear clutter around visible pumps, filters, and service access areas.", [0, 600], [500, 2500], "Medium", 48, ["An organized equipment area reduces perceived maintenance friction."]),
+  ],
 };
 
 function seed(
