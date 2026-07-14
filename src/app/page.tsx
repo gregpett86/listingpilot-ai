@@ -129,6 +129,8 @@ type CoverageScore = "Excellent" | "Good" | "Limited";
 
 type VisionAnalysisResponse = AnalyzePhotosResponse;
 
+const SYNTHESIS_TIMEOUT_MS = 12000;
+
 const confidenceScores: Record<ConfidenceLevel, number> = {
   High: 0.85,
   Medium: 0.6,
@@ -485,6 +487,7 @@ function exportReportPdf(
 export default function Home() {
   const [photos, setPhotos] = useState<PhotoItem[]>([]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isGeneratingReport, setIsGeneratingReport] = useState(false);
   const [findings, setFindings] = useState<AreaFinding[]>([]);
   const [recommendations, setRecommendations] = useState<
     ImprovementRecommendation[]
@@ -1038,6 +1041,10 @@ export default function Home() {
       return;
     }
 
+    if (isGeneratingReport) {
+      return;
+    }
+
     if (!visionDebugResponse?.findings?.length) {
       setAnalysisError("Upload photos and wait for AI room identification first.");
       return;
@@ -1113,14 +1120,26 @@ export default function Home() {
     let wholePropertyAnalysis =
       fallbackWholePropertyAnalysis(synthesisRequest);
 
+    setIsGeneratingReport(true);
     try {
-      const synthesisResponse = await fetch("/api/synthesize-report", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(synthesisRequest),
-      });
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => {
+        controller.abort();
+      }, SYNTHESIS_TIMEOUT_MS);
+      let synthesisResponse: Response;
+
+      try {
+        synthesisResponse = await fetch("/api/synthesize-report", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(synthesisRequest),
+          signal: controller.signal,
+        });
+      } finally {
+        window.clearTimeout(timeoutId);
+      }
 
       if (synthesisResponse.ok) {
         const synthesisResult =
@@ -1133,6 +1152,8 @@ export default function Home() {
       if (enableVisionDebug) {
         console.warn("Whole-property synthesis failed; using fallback.", error);
       }
+    } finally {
+      setIsGeneratingReport(false);
     }
     const nextFindings = buildFindings({
       observations: nextObservations,
@@ -1178,8 +1199,27 @@ export default function Home() {
       photo.categoryStatus === "agent_corrected" ||
       photo.categoryStatus === "analysis_failed",
   ).length;
+  const remainingAnalysisCount = Math.max(
+    photos.length - completedAnalysisCount,
+    0,
+  );
+  const analysisProgressPercent =
+    photos.length > 0
+      ? Math.round((completedAnalysisCount / photos.length) * 100)
+      : 0;
+  const currentAnalyzingPhoto = photos.find(
+    (photo) => photo.categoryStatus === "analyzing",
+  );
+  const currentAnalyzingFinding = currentAnalyzingPhoto
+    ? visionFindingsByPhotoId.get(currentAnalyzingPhoto.id)
+    : undefined;
+  const currentAnalyzingRoom =
+    currentAnalyzingPhoto?.area ??
+    currentAnalyzingFinding?.suggestedCategory ??
+    (analysisInProgress ? "Identifying room" : "None");
   const categoriesReadyForReview = successfulClassifiedPhotoCount > 0;
-  const canGenerateReport = categoriesReadyForReview && !analysisInProgress;
+  const canGenerateReport =
+    categoriesReadyForReview && !analysisInProgress && !isGeneratingReport;
   const recommendedCountMet =
     photos.length >= 12 && photos.length <= PHOTO_UPLOAD_LIMITS.maxPhotos;
   const visibleChecklistItems =
@@ -1207,8 +1247,8 @@ export default function Home() {
       <div className="flex h-full flex-col bg-[#F0F2F8] text-[#111827]">
         <RealtyEdgePageHeader />
         <div className="flex-1 overflow-y-auto">
-          <section className="mx-auto grid w-full max-w-[1180px] gap-6 px-5 py-6 sm:px-8 lg:grid-cols-[560px_1fr]">
-            <div className="flex min-w-0 flex-col gap-5">
+          <section className="mx-auto w-full max-w-[1400px] px-5 py-6 sm:px-8">
+            <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
               <div className="grid grid-cols-3 gap-3">
                 {[
                   { label: "Photos", value: photos.length },
@@ -1312,11 +1352,47 @@ export default function Home() {
                     </span>
                   </div>
                 </div>
-                {analysisInProgress && (
-                  <p className="mb-4 rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm font-bold text-[#374151]">
-                    AI is identifying rooms: {completedAnalysisCount} of{" "}
-                    {photos.length} complete
-                  </p>
+                {photos.length > 0 && (
+                  <div className="mb-4 rounded-xl border border-[#E5E7EB] bg-white p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="label-caps text-[#B45309]">
+                          Analysis Progress
+                        </p>
+                        <p className="mt-1 text-lg font-extrabold text-[#111827]">
+                          {completedAnalysisCount} completed /{" "}
+                          {remainingAnalysisCount} remaining
+                        </p>
+                      </div>
+                      <span className="rounded-full bg-[#F3F4F6] px-2.5 py-1 text-xs font-extrabold text-[#374151]">
+                        {analysisProgressPercent}%
+                      </span>
+                    </div>
+                    <div className="mt-4 h-4 overflow-hidden rounded-full bg-[#E5E7EB]">
+                      <div
+                        className={`h-full rounded-full bg-[#D4A017] transition-all duration-500 ${
+                          analysisInProgress ? "animate-pulse" : ""
+                        }`}
+                        style={{ width: `${analysisProgressPercent}%` }}
+                      />
+                    </div>
+                    <div className="mt-3 grid gap-2 text-sm text-[#6B7280]">
+                      <p>
+                        Current room:{" "}
+                        <span className="font-bold text-[#111827]">
+                          {currentAnalyzingRoom}
+                        </span>
+                      </p>
+                      {currentAnalyzingPhoto && (
+                        <p>
+                          Analyzing{" "}
+                          <span className="font-bold text-[#111827]">
+                            {currentAnalyzingPhoto.displayLabel}
+                          </span>
+                        </p>
+                      )}
+                    </div>
+                  </div>
                 )}
                 {hasPartialCoverage && (
                   <p className="mb-4 rounded-lg border border-[rgba(212,160,23,0.28)] bg-[rgba(212,160,23,0.08)] px-3 py-2 text-sm font-semibold text-[#92640a]">
@@ -1384,7 +1460,7 @@ export default function Home() {
                   onClick={generateListingReport}
                   type="button"
                 >
-                  Generate Listing Report
+                  {isGeneratingReport ? "Generating Report..." : "Generate Report"}
                 </button>
               </StepCard>
 
@@ -1408,7 +1484,7 @@ export default function Home() {
               </StepCard>
             </div>
 
-            <div className="min-w-0 space-y-5">
+            <div className="mt-6 min-w-0 space-y-5">
               <SectionCard>
                 <div>
                   <h2 className="text-base font-bold text-[#111827]">
@@ -1433,8 +1509,20 @@ export default function Home() {
                     </div>
                   </div>
                 ) : (
-                  <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                    {photos.map((photo) => (
+                  <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                    {photos.map((photo) => {
+                      const finding = visionFindingsByPhotoId.get(photo.id);
+                      const aiRoom =
+                        finding?.suggestedCategory ??
+                        photo.area ??
+                        (photo.analysisFailure
+                          ? "Analysis unavailable"
+                          : "Identifying room");
+                      const condition =
+                        finding?.condition ??
+                        (photo.analysisFailure ? "No result" : "Pending");
+
+                      return (
                       <article
                         className="overflow-hidden rounded-xl border border-[#E5E7EB] bg-white card-shadow"
                         key={photo.id}
@@ -1452,9 +1540,6 @@ export default function Home() {
                             <div className="min-w-0">
                               <p className="truncate text-sm font-bold text-[#111827]">
                                 {photo.displayLabel}
-                              </p>
-                              <p className="text-xs text-[#9CA3AF]">
-                                {formatBytes(photo.size)}
                               </p>
                             </div>
                             <span
@@ -1477,13 +1562,20 @@ export default function Home() {
                                     : "Analyzing..."}
                             </span>
                           </div>
-                          <button
-                            className="text-xs font-bold text-[#6B7280] underline underline-offset-2 hover:text-[#111827]"
-                            onClick={() => removePhoto(photo.id)}
-                            type="button"
-                          >
-                            Remove
-                          </button>
+                          <dl className="grid gap-2 text-xs">
+                            <div>
+                              <dt className="label-caps">AI Room</dt>
+                              <dd className="mt-1 font-bold text-[#111827]">
+                                {aiRoom}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt className="label-caps">Condition</dt>
+                              <dd className="mt-1 font-bold text-[#111827]">
+                                {condition}
+                              </dd>
+                            </div>
+                          </dl>
                           <select
                             className="rep-input py-2 text-sm"
                             onChange={(event) =>
@@ -1516,9 +1608,17 @@ export default function Home() {
                               </button>
                             </div>
                           )}
+                          <button
+                            className="text-xs font-bold text-[#6B7280] underline underline-offset-2 hover:text-[#111827]"
+                            onClick={() => removePhoto(photo.id)}
+                            type="button"
+                          >
+                            Remove
+                          </button>
                         </div>
                       </article>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </SectionCard>

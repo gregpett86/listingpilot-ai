@@ -280,8 +280,13 @@ describe("ListingPilot page", () => {
       expect(screen.getByRole("combobox")).toHaveValue("Kitchen"),
     );
     expect(screen.getByText("AI identified")).toBeInTheDocument();
+    expect(screen.getByText("Analysis Progress")).toBeInTheDocument();
+    expect(screen.getByText("1 completed / 0 remaining")).toBeInTheDocument();
+    expect(screen.getByText("AI Room")).toBeInTheDocument();
+    expect(screen.getByText("Condition")).toBeInTheDocument();
+    expect(screen.getByText("Average")).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Generate Listing Report" }),
+      screen.getByRole("button", { name: "Generate Report" }),
     ).toBeEnabled();
   });
 
@@ -443,7 +448,7 @@ describe("ListingPilot page", () => {
     const { container } = render(<Home />);
 
     await userEvent.upload(uploadInput(container), pngFile("remove-me.png"));
-    await screen.findByText("Photo 1");
+    await screen.findAllByText("Photo 1");
     await userEvent.click(screen.getByRole("button", { name: "Remove" }));
     resolveAnalysis(
       new Response(
@@ -474,7 +479,7 @@ describe("ListingPilot page", () => {
 
     expect(await screen.findByText("Analyzing...")).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Generate Listing Report" }),
+      screen.getByRole("button", { name: "Generate Report" }),
     ).toBeDisabled();
   });
 
@@ -515,7 +520,7 @@ describe("ListingPilot page", () => {
     ]);
     await screen.findAllByText("Analysis unavailable");
     await userEvent.click(
-      screen.getByRole("button", { name: "Generate Listing Report" }),
+      screen.getByRole("button", { name: "Generate Report" }),
     );
 
     expect(await screen.findByText("C. Listing Readiness")).toBeInTheDocument();
@@ -592,7 +597,7 @@ describe("ListingPilot page", () => {
     await userEvent.upload(uploadInput(container), pngFile("fallback.png"));
     await waitFor(() => expect(screen.getByRole("combobox")).toHaveValue("Kitchen"));
     await userEvent.click(
-      screen.getByRole("button", { name: "Generate Listing Report" }),
+      screen.getByRole("button", { name: "Generate Report" }),
     );
 
     expect(await screen.findByText("B. Executive Summary")).toBeInTheDocument();
