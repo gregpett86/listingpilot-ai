@@ -97,6 +97,7 @@ describe("listing-analysis helpers", () => {
         {
           id: "kitchen-1",
           name: "kitchen.jpg",
+          displayLabel: "Photo 1",
           url: "blob:http://localhost/kitchen",
           area: "Kitchen",
         },
@@ -108,6 +109,7 @@ describe("listing-analysis helpers", () => {
     expect(rows).toEqual([
       expect.objectContaining({
         photoId: "kitchen-1",
+        photoName: "Photo 1",
         previewUrl: "blob:http://localhost/kitchen",
         assignedRoom: "Kitchen",
         visionRoom: "Kitchen",

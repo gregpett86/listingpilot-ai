@@ -178,9 +178,11 @@ function normalizeFinding(
 
   return {
     photoId: finding.photoId,
-    assignedCategory: photo.assignedCategory,
+    assignedCategory: photo.assignedCategory ?? finding.suggestedCategory,
     suggestedCategory: finding.suggestedCategory,
-    categoryMismatch: finding.suggestedCategory !== photo.assignedCategory,
+    categoryMismatch:
+      photo.assignedCategory != null &&
+      finding.suggestedCategory !== photo.assignedCategory,
     condition: finding.condition,
     confidence: finding.confidence,
     visibleFindings: Array.isArray(finding.visibleFindings)
@@ -317,7 +319,8 @@ Return one finding per image. Use only these suggestedCategory values: ${ROOM_TY
 Use only these condition values: ${PROPERTY_CONDITIONS.join(", ")}.
 Use only these confidence values: ${CONFIDENCE_LEVELS.join(", ")}.
 
-The user's assignedCategory is authoritative for product scoring and recommendation mapping. suggestedCategory is only your visual classification suggestion.
+When assignedCategory is provided, it is the user's authoritative category for product scoring and recommendation mapping. suggestedCategory is only your visual classification suggestion.
+When assignedCategory is not provided, classify the room/category from the image and return that as suggestedCategory.
 Return a different suggestedCategory when the visible image clearly appears to be a different category, but do not force the assignedCategory into your suggestion.
 
 visibleFindings must be concise phrases grounded only in what is explicitly visible in the photo.
@@ -332,12 +335,18 @@ Decluttering requires visible clutter. Paint refresh requires worn, marked, dama
 Landscaping cleanup requires overgrowth, debris, dead vegetation, edging issues, weeds, or similarly visible issues.
 
 If the image is unclear, use the closest suggestedCategory, a conservative condition, Low confidence, and no recommendations unless the visual evidence is explicit.
-Each image is labeled with its photoId and assignedCategory immediately before the image. Copy the exact photoId into the structured output.`,
+Each image is labeled with its photoId and may include assignedCategory immediately before the image. Copy the exact photoId into the structured output.`,
     },
     ...photos.flatMap((photo) => [
       {
         type: "input_text",
-        text: `photoId: ${photo.id}\nassignedCategory: ${photo.assignedCategory}\nfileName: ${photo.name}`,
+        text: [
+          `photoId: ${photo.id}`,
+          photo.assignedCategory
+            ? `assignedCategory: ${photo.assignedCategory}`
+            : "assignedCategory: not provided",
+          `fileName: ${photo.name}`,
+        ].join("\n"),
       },
       {
         type: "input_image",

@@ -36,16 +36,22 @@ import {
   type PhotoAnalysisFailure,
   type VisionFinding,
   formatBytes,
-  safeErrorMessage,
   validateClientPhotoFiles,
 } from "@/lib/analysis-schema";
 
 type PhotoItem = {
   id: string;
   name: string;
+  displayLabel: string;
   url: string;
   size: number;
-  area: RoomType;
+  area: RoomType | null;
+  categoryStatus:
+    | "pending_analysis"
+    | "analyzing"
+    | "ai_suggested"
+    | "agent_corrected"
+    | "analysis_failed";
   classificationConfidence: number;
   matchedKeywords: string[];
   file: File;
@@ -103,21 +109,6 @@ type CoverageStatus = "Complete" | "Partial" | "Missing";
 type CoverageScore = "Excellent" | "Good" | "Limited";
 
 type VisionAnalysisResponse = AnalyzePhotosResponse;
-
-type PipelineTraceEntry = {
-  stage:
-    | "button_click"
-    | "frontend_request"
-    | "api_route"
-    | "openai_request"
-    | "openai_response"
-    | "json_parser"
-    | "database_save"
-    | "ui_render";
-  status: "started" | "success" | "failure" | "skipped";
-  message: string;
-  data?: Record<string, unknown>;
-};
 
 const confidenceScores: Record<ConfidenceLevel, number> = {
   High: 0.85,
@@ -480,9 +471,13 @@ export default function Home() {
   );
   const [visionDebugResponse, setVisionDebugResponse] =
     useState<VisionAnalysisResponse | null>(null);
-  const [pipelineTrace, setPipelineTrace] = useState<PipelineTraceEntry[]>([]);
   const [report, setReport] = useState<OptimizationReport | null>(null);
   const objectUrlsRef = useRef(new Set<string>());
+  const analysisQueueRef = useRef(new Set<string>());
+  const isAnalyzingRef = useRef(false);
+  const latestPhotosRef = useRef<PhotoItem[]>([]);
+  const latestFindingsRef = useRef<VisionFinding[]>([]);
+  const uploadSequenceRef = useRef(0);
 
   useEffect(() => {
     const objectUrls = objectUrlsRef.current;
@@ -492,6 +487,14 @@ export default function Home() {
       objectUrls.clear();
     };
   }, []);
+
+  useEffect(() => {
+    latestPhotosRef.current = photos;
+  }, [photos]);
+
+  useEffect(() => {
+    latestFindingsRef.current = visionDebugResponse?.findings ?? [];
+  }, [visionDebugResponse]);
 
   const photoCounts = useMemo(
     () =>
@@ -546,39 +549,6 @@ export default function Home() {
       ),
     [visionDebugResponse],
   );
-  const visionValidationFlags = useMemo(() => {
-    if (!visionDebugResponse) {
-      return [];
-    }
-
-    return photos.flatMap((photo) => {
-      const finding = visionFindingsByPhotoId.get(photo.id);
-
-      if (!finding) {
-        return [`${photo.name}: no Vision finding was returned.`];
-      }
-
-      const flags = [];
-
-      if (finding.confidence === "Low") {
-        flags.push(`${photo.name}: low-confidence classification.`);
-      }
-
-      if (finding.categoryMismatch) {
-        flags.push(`${photo.name}: category mismatch - review required.`);
-      }
-
-      if (finding.visibleFindings.length === 0) {
-        flags.push(`${photo.name}: no visible findings returned.`);
-      }
-
-      return flags;
-    });
-  }, [photos, visionDebugResponse, visionFindingsByPhotoId]);
-  const failedAnalysisPhotos = useMemo(
-    () => photos.filter((photo) => photo.analysisFailure),
-    [photos],
-  );
   const realPhotoValidationRows = useMemo(
     () =>
       buildRealPhotoValidationRows({
@@ -590,18 +560,29 @@ export default function Home() {
     [photos, recommendations, visionDebugResponse],
   );
 
-  function resetAnalysisState() {
+  function resetReportState() {
     setFindings([]);
     setRecommendations([]);
     setReadinessScore(null);
-    setAnalysisConfidence("Low");
-    setAnalysisError("");
-    setVisionDebugResponse(null);
-    setPipelineTrace([]);
     setReport(null);
   }
 
   function appendPhotoFiles(files: File[]) {
+    const remainingSlots = PHOTO_UPLOAD_LIMITS.maxPhotos - photos.length;
+
+    if (remainingSlots <= 0) {
+      setUploadIssues([
+        {
+          code: "too_many_photos",
+          message:
+            "You have reached the 20-photo limit. Remove a photo before adding another.",
+        },
+      ]);
+      return;
+    }
+
+    const filesToValidate = files.slice(0, remainingSlots);
+    const skippedForLimit = files.length > remainingSlots;
     const existingKeys = new Set(
       photos.map((photo) => `${photo.name}:${photo.size}:${photo.file.type}`),
     );
@@ -610,43 +591,55 @@ export default function Home() {
       currentPhotoCount: photos.length,
       currentTotalBytes,
       existingKeys,
-      files,
+      files: filesToValidate,
     });
 
-    setUploadIssues(issues);
+    setUploadIssues([
+      ...(skippedForLimit
+        ? [
+            {
+              code: "too_many_photos" as const,
+              message:
+                "You can upload up to 20 photos per report. We added the first available photos and skipped the rest.",
+            },
+          ]
+        : []),
+      ...issues.map((issue) => ({
+        ...issue,
+        photoName: undefined,
+      })),
+    ]);
 
     if (accepted.length === 0) {
       return;
     }
 
-    setPhotos((currentPhotos) => {
-      const uploadBatchId = Date.now();
-      const nextPhotos = accepted.map((file, index) => {
-        const url = URL.createObjectURL(file);
-        objectUrlsRef.current.add(url);
+    uploadSequenceRef.current += 1;
+    const uploadBatchId = uploadSequenceRef.current;
+    const appendedPhotos = accepted.map((file, index) => {
+      const url = URL.createObjectURL(file);
+      objectUrlsRef.current.add(url);
 
-        return {
-          id: `${file.name}-${file.lastModified}-${index}`,
-          name: file.name,
-          url,
-          size: file.size,
-          area:
-            propertyAreas[
-              (currentPhotos.length + index) % propertyAreas.length
-            ],
-          classificationConfidence: 0.2,
-          matchedKeywords: [],
-          file,
-        };
-      });
-      const appendedPhotos = nextPhotos.map((photo, index) => ({
-        ...photo,
-        id: `${photo.id}-${uploadBatchId}-${currentPhotos.length + index}`,
-      }));
-
-      return [...currentPhotos, ...appendedPhotos];
+      return {
+        id: `${file.name}-${file.lastModified}-${index}-${uploadBatchId}-${photos.length + index}`,
+        name: file.name,
+        displayLabel: `Photo ${photos.length + index + 1}`,
+        url,
+        size: file.size,
+        area: null,
+        categoryStatus: "pending_analysis" as const,
+        classificationConfidence: 0.2,
+        matchedKeywords: [],
+        file,
+      };
     });
-    resetAnalysisState();
+
+    setPhotos((currentPhotos) => [...currentPhotos, ...appendedPhotos]);
+    resetReportState();
+    appendedPhotos.forEach((photo) => analysisQueueRef.current.add(photo.id));
+    window.setTimeout(() => {
+      void processAnalysisQueue();
+    }, 0);
   }
 
   function handlePhotoUpload(event: ChangeEvent<HTMLInputElement>) {
@@ -670,6 +663,7 @@ export default function Home() {
           ? {
               ...photo,
               area,
+              categoryStatus: "agent_corrected",
               classificationConfidence: Math.max(
                 photo.classificationConfidence,
                 0.75,
@@ -683,8 +677,49 @@ export default function Home() {
     setReadinessScore(null);
     setAnalysisConfidence("Low");
     setAnalysisError("");
-    setVisionDebugResponse(null);
     setReport(null);
+  }
+
+  function removePhoto(photoId: string) {
+    analysisQueueRef.current.delete(photoId);
+    setPhotos((currentPhotos) => {
+      const photoToRemove = currentPhotos.find((photo) => photo.id === photoId);
+
+      if (photoToRemove) {
+        URL.revokeObjectURL(photoToRemove.url);
+        objectUrlsRef.current.delete(photoToRemove.url);
+      }
+
+      return currentPhotos.filter((photo) => photo.id !== photoId);
+    });
+    setVisionDebugResponse((currentResponse) =>
+      currentResponse
+        ? {
+            ...currentResponse,
+            findings: currentResponse.findings.filter(
+              (finding) => finding.photoId !== photoId,
+            ),
+            failedPhotos: currentResponse.failedPhotos.filter(
+              (failure) => failure.photoId !== photoId,
+            ),
+          }
+        : currentResponse,
+    );
+    resetReportState();
+  }
+
+  async function processAnalysisQueue() {
+    if (isAnalyzingRef.current || analysisQueueRef.current.size === 0) {
+      return;
+    }
+
+    const queuedPhotoIds = Array.from(analysisQueueRef.current);
+    analysisQueueRef.current.clear();
+    await analyzePhotos(new Set(queuedPhotoIds));
+
+    if (analysisQueueRef.current.size > 0) {
+      void processAnalysisQueue();
+    }
   }
 
   async function validateReadableImage(file: File) {
@@ -720,44 +755,50 @@ export default function Home() {
   }
 
   async function analyzePhotos(targetPhotoIds?: Set<string>) {
+    if (isAnalyzingRef.current) {
+      if (targetPhotoIds) {
+        targetPhotoIds.forEach((photoId) =>
+          analysisQueueRef.current.add(photoId),
+        );
+      }
+      return;
+    }
+
     const photosToAnalyze = targetPhotoIds
-      ? photos.filter((photo) => targetPhotoIds.has(photo.id))
-      : photos;
+      ? latestPhotosRef.current.filter((photo) => targetPhotoIds.has(photo.id))
+      : latestPhotosRef.current.filter(
+          (photo) =>
+            !latestFindingsRef.current.some(
+              (finding) => finding.photoId === photo.id,
+            ) || photo.analysisFailure,
+        );
 
     if (photosToAnalyze.length === 0) {
       setAnalysisError("No failed photos are available to retry.");
       return;
     }
 
+    const activePhotoIds = new Set(photosToAnalyze.map((photo) => photo.id));
+    isAnalyzingRef.current = true;
     setIsAnalyzing(true);
     setAnalysisError("");
-    if (!enableVisionDebug && !targetPhotoIds) {
-      setVisionDebugResponse(null);
-      setPipelineTrace([]);
-    }
+    setPhotos((currentPhotos) =>
+      currentPhotos.map((photo) =>
+        activePhotoIds.has(photo.id)
+          ? {
+              ...photo,
+              categoryStatus:
+                photo.categoryStatus === "agent_corrected"
+                  ? photo.categoryStatus
+                  : "analyzing",
+              analysisFailure: undefined,
+            }
+          : photo,
+      ),
+    );
     let visionLogOpen = false;
-    const localTrace: PipelineTraceEntry[] = [];
-    const recordTrace = (entry: PipelineTraceEntry) => {
-      localTrace.push(entry);
-      if (enableVisionDebug) {
-        console.log("[ListingPilot Pipeline Trace]", entry);
-        setPipelineTrace([...localTrace]);
-      }
-    };
 
     try {
-      recordTrace({
-        stage: "button_click",
-        status: "started",
-        message: targetPhotoIds
-          ? "Retry failed photo analysis clicked."
-          : "Run AI Analysis button clicked.",
-        data: {
-          photoCount: photosToAnalyze.length,
-          photoNames: photosToAnalyze.map((photo) => photo.name),
-        },
-      });
-
       const unreadablePhotos: PhotoAnalysisFailure[] = [];
       const readablePhotos: PhotoItem[] = [];
 
@@ -767,10 +808,10 @@ export default function Home() {
         } else {
           unreadablePhotos.push({
             photoId: photo.id,
-            name: photo.name,
+            name: photo.displayLabel,
             status: "failed",
             errorType: "image_decode_failed",
-            message: safeErrorMessage("image_decode_failed"),
+            message: "Analysis unavailable",
           });
         }
       }
@@ -794,31 +835,21 @@ export default function Home() {
           return {
             id: photo.id,
             name: photo.name,
-            assignedCategory: photo.area,
+            assignedCategory:
+              photo.categoryStatus === "agent_corrected" && photo.area
+                ? photo.area
+                : undefined,
             fileMimeType: photo.file.type,
             fileSize: photo.file.size,
             dataUrl,
           };
         }),
       );
-      recordTrace({
-        stage: "frontend_request",
-        status: "started",
-        message: "Frontend prepared Vision request payload.",
-        data: {
-          requestSent: true,
-          photoCount: payloadPhotos.length,
-          photoIds: payloadPhotos.map((photo) => photo.id),
-          photoNames: payloadPhotos.map((photo) => photo.name),
-        },
-      });
 
       if (enableVisionDebug) {
         console.groupCollapsed("[ListingPilot Vision] analyzePhotos");
         console.log("calling /api/analyze-photos", {
           photoCount: payloadPhotos.length,
-          photoIds: payloadPhotos.map((photo) => photo.id),
-          photoNames: payloadPhotos.map((photo) => photo.name),
         });
         visionLogOpen = true;
       }
@@ -829,17 +860,6 @@ export default function Home() {
         body: JSON.stringify({ photos: payloadPhotos }),
       });
 
-      recordTrace({
-        stage: "frontend_request",
-        status: response.ok ? "success" : "failure",
-        message: "Frontend received response from Vision API route.",
-        data: {
-          responseReceived: true,
-          status: response.status,
-          ok: response.ok,
-        },
-      });
-
       if (!response.ok) {
         const errorBody = (await response.json().catch(() => null)) as
           | VisionAnalysisResponse
@@ -848,15 +868,6 @@ export default function Home() {
         if (enableVisionDebug) {
           console.error("Vision route error", errorBody);
           setVisionDebugResponse(errorBody);
-          setPipelineTrace([
-            ...localTrace,
-            {
-              stage: "ui_render",
-              status: "failure",
-              message: "UI received Vision error response.",
-              data: { error: errorBody?.error },
-            },
-          ]);
         }
 
         throw new Error(errorBody?.error ?? "AI Vision analysis failed.");
@@ -868,30 +879,28 @@ export default function Home() {
         console.groupEnd();
         visionLogOpen = false;
         setVisionDebugResponse(result);
-        setPipelineTrace([
-          ...localTrace,
-          {
-            stage: "ui_render",
-            status: "started",
-            message: "Frontend received parsed Vision JSON and is preparing UI state.",
-            data: {
-              findingCount: result.findings?.length ?? 0,
-              failedPhotoCount: result.failedPhotos?.length ?? 0,
-            },
-          },
-        ]);
       }
 
       const retriedPhotoIds = new Set(photosToAnalyze.map((photo) => photo.id));
-      const previousFindings = targetPhotoIds
-        ? visionDebugResponse?.findings ?? []
-        : [];
+      const currentPhotoIds = new Set(
+        latestPhotosRef.current.map((photo) => photo.id),
+      );
+      const freshFindings = (result.findings ?? []).filter((finding) =>
+        currentPhotoIds.has(finding.photoId),
+      );
       const visionFindings = mergeFindings(
-        previousFindings,
-        result.findings ?? [],
+        latestFindingsRef.current.filter((finding) =>
+          currentPhotoIds.has(finding.photoId),
+        ),
+        freshFindings,
         retriedPhotoIds,
       );
-      const failedPhotos = [...unreadablePhotos, ...(result.failedPhotos ?? [])];
+      const failedPhotos = [
+        ...unreadablePhotos,
+        ...(result.failedPhotos ?? []).filter((failure) =>
+          currentPhotoIds.has(failure.photoId),
+        ),
+      ];
       const failedByPhotoId = new Map(
         failedPhotos.map((failure) => [failure.photoId, failure]),
       );
@@ -918,6 +927,14 @@ export default function Home() {
           if (finding) {
             return {
               ...photo,
+              area:
+                photo.categoryStatus === "agent_corrected"
+                  ? photo.area
+                  : finding.suggestedCategory,
+              categoryStatus:
+                photo.categoryStatus === "agent_corrected"
+                  ? photo.categoryStatus
+                  : "ai_suggested",
               classificationConfidence:
                 confidenceByPhotoId.get(photo.id) ??
                 photo.classificationConfidence,
@@ -931,7 +948,15 @@ export default function Home() {
           if (failure) {
             return {
               ...photo,
-              analysisFailure: failure,
+              analysisFailure: {
+                ...failure,
+                name: photo.displayLabel,
+                message: "Analysis unavailable",
+              },
+              categoryStatus:
+                photo.categoryStatus === "agent_corrected"
+                  ? photo.categoryStatus
+                  : "analysis_failed",
             };
           }
 
@@ -939,25 +964,11 @@ export default function Home() {
         }),
       );
 
-      const nextObservations = buildRoomObservations(visionFindings);
-      const nextRecommendations = recommendImprovements({
-        observations: nextObservations,
-        limit: 12,
-      });
-      const nextReadinessScore = calculatePropertyReadinessScore({
-        observations: nextObservations,
-        recommendations: nextRecommendations,
-      });
       const nextAnalysisConfidence = confidenceFromVisionFindings(visionFindings);
 
-      setFindings(
-        buildFindings({
-          observations: nextObservations,
-          recommendations: nextRecommendations,
-        }),
-      );
-      setRecommendations(nextRecommendations);
-      setReadinessScore(nextReadinessScore);
+      setFindings([]);
+      setRecommendations([]);
+      setReadinessScore(null);
       setAnalysisConfidence(nextAnalysisConfidence);
       setReport(null);
       if (failedPhotos.length > 0) {
@@ -970,78 +981,129 @@ export default function Home() {
         findings: visionFindings,
         failedPhotos,
       });
-      if (enableVisionDebug) {
-        setPipelineTrace([
-          ...localTrace,
-          {
-            stage: "ui_render",
-            status: "success",
-            message:
-              "UI state updated with Vision findings, recommendations, and readiness score.",
-            data: {
-              findingsRendered: visionFindings.length,
-              observationsCreated: nextObservations.length,
-              recommendationsCreated: nextRecommendations.length,
-            },
-          },
-        ]);
-      }
     } catch (error) {
       setAnalysisError(
         error instanceof Error
           ? error.message
           : "AI Vision analysis could not be completed.",
       );
-      if (enableVisionDebug && localTrace.length > 0) {
-        setPipelineTrace((currentTrace) => [
-          ...currentTrace,
-          {
-            stage: "ui_render",
-            status: "failure",
-            message: "Analysis pipeline stopped with an error.",
-            data: {
-              error: error instanceof Error ? error.message : String(error),
-            },
-          },
-        ]);
-      }
       if (enableVisionDebug && visionLogOpen) {
         console.groupEnd();
       }
     } finally {
+      isAnalyzingRef.current = false;
       setIsAnalyzing(false);
+      if (analysisQueueRef.current.size > 0) {
+        window.setTimeout(() => {
+          void processAnalysisQueue();
+        }, 0);
+      }
     }
   }
 
-  function createReport() {
-    if (!readinessScore) return;
+  function generateListingReport() {
+    if (isAnalyzingRef.current) {
+      setAnalysisError("AI is still identifying rooms. Please wait a moment.");
+      return;
+    }
 
+    if (!visionDebugResponse?.findings?.length) {
+      setAnalysisError("Upload photos and wait for AI room identification first.");
+      return;
+    }
+
+    const photoById = new Map(photos.map((photo) => [photo.id, photo]));
+    const successfulPhotos = photos.filter(
+      (photo) => !photo.analysisFailure && visionFindingsByPhotoId.has(photo.id),
+    );
+    const missingCategory = successfulPhotos.find((photo) => !photo.area);
+
+    if (missingCategory) {
+      setAnalysisError(
+        "Review all successful photo categories before creating the report.",
+      );
+      return;
+    }
+
+    const confirmedFindings = visionDebugResponse.findings.flatMap((finding) => {
+      const photo = photoById.get(finding.photoId);
+
+      if (!photo || photo.analysisFailure || !photo.area) {
+        return [];
+      }
+
+      return [
+        {
+          ...finding,
+          assignedCategory: photo.area,
+          categoryMismatch: false,
+        },
+      ];
+    });
+
+    if (confirmedFindings.length === 0) {
+      setAnalysisError(
+        "No successfully analyzed photos are ready for scoring yet.",
+      );
+      return;
+    }
+
+    const nextObservations = buildRoomObservations(confirmedFindings);
+    const nextRecommendations = recommendImprovements({
+      observations: nextObservations,
+      limit: 12,
+    });
+    const nextReadinessScore = calculatePropertyReadinessScore({
+      observations: nextObservations,
+      recommendations: nextRecommendations,
+    });
+
+    setFindings(
+      buildFindings({
+        observations: nextObservations,
+        recommendations: nextRecommendations,
+      }),
+    );
+    setRecommendations(nextRecommendations);
+    setReadinessScore(nextReadinessScore);
+    setAnalysisConfidence(confidenceFromVisionFindings(confirmedFindings));
+    setAnalysisError("");
+    setVisionDebugResponse({
+      ...visionDebugResponse,
+      findings: confirmedFindings,
+    });
     setReport(
       buildReport({
-        confidenceLevel: analysisConfidence,
-        findings,
+        confidenceLevel: confidenceFromVisionFindings(confirmedFindings),
+        findings: buildFindings({
+          observations: nextObservations,
+          recommendations: nextRecommendations,
+        }),
         photos,
-        readinessScore,
-        recommendations,
+        readinessScore: nextReadinessScore,
+        recommendations: nextRecommendations,
       }),
     );
   }
 
-  const uploadedPhotoCount = photos.length;
   const categorizedPhotoCount = coverageItems.filter(
     ({ count }) => count > 0,
   ).length;
-  const missingCategories = coverageItems
-    .filter(({ isRecommended, status }) => isRecommended && status === "Missing")
-    .map(({ category }) => category);
   const analysisInProgress = isAnalyzing;
-  const buttonDisabledReason =
-    uploadedPhotoCount <= 0
-      ? "no_uploaded_photos"
-      : analysisInProgress
-        ? "analysis_in_progress"
-        : "none";
-  const runAnalysisButtonEnabled = buttonDisabledReason === "none";
+  const successfulClassifiedPhotoCount = photos.filter(
+    (photo) =>
+      !photo.analysisFailure &&
+      photo.area != null &&
+      visionFindingsByPhotoId.has(photo.id),
+  ).length;
+  const completedAnalysisCount = photos.filter(
+    (photo) =>
+      photo.categoryStatus === "ai_suggested" ||
+      photo.categoryStatus === "agent_corrected" ||
+      photo.categoryStatus === "analysis_failed",
+  ).length;
+  const categoriesReadyForReview = successfulClassifiedPhotoCount > 0;
+  const canGenerateReport = categoriesReadyForReview && !analysisInProgress;
   const recommendedCountMet =
     photos.length >= 12 && photos.length <= PHOTO_UPLOAD_LIMITS.maxPhotos;
 
@@ -1089,6 +1151,10 @@ export default function Home() {
                   <span className="mt-1 text-xs font-medium text-[#6B7280]">
                     JPEG, PNG, or WebP. Up to {PHOTO_UPLOAD_LIMITS.maxPhotos} images, {formatBytes(PHOTO_UPLOAD_LIMITS.maxBytesPerPhoto)} each.
                   </span>
+                  <span className="mt-2 max-w-sm text-xs leading-5 text-[#6B7280]">
+                    AI will identify each room. You can review and correct the
+                    categories before the report is created.
+                  </span>
                   <input
                     accept={SUPPORTED_IMAGE_MIME_TYPES.join(",")}
                     className="sr-only"
@@ -1100,8 +1166,7 @@ export default function Home() {
                 {uploadIssues.length > 0 && (
                   <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
                     {uploadIssues.map((issue) => (
-                      <p key={`${issue.code}-${issue.photoName ?? "request"}`}>
-                        {issue.photoName ? `${issue.photoName}: ` : ""}
+                      <p key={`${issue.code}-${issue.message}`}>
                         {issue.message}
                       </p>
                     ))}
@@ -1129,10 +1194,10 @@ export default function Home() {
               </StepCard>
 
               <StepCard
-                description="Review photo coverage guidance and run the AI assessment."
-                isComplete={findings.length > 0}
+                description="AI identifies each room automatically. Review and correct any category before creating the report."
+                isComplete={categoriesReadyForReview}
                 step={2}
-                title="Review Analysis"
+                title="Review Categories"
               >
                 <div className="mb-4 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-2.5">
                   <div className="flex items-center justify-between text-sm">
@@ -1152,6 +1217,12 @@ export default function Home() {
                     </span>
                   </div>
                 </div>
+                {analysisInProgress && (
+                  <p className="mb-4 rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm font-bold text-[#374151]">
+                    AI is identifying rooms: {completedAnalysisCount} of{" "}
+                    {photos.length} complete
+                  </p>
+                )}
                 {hasPartialCoverage && (
                   <p className="mb-4 rounded-lg border border-[rgba(212,160,23,0.28)] bg-[rgba(212,160,23,0.08)] px-3 py-2 text-sm font-semibold text-[#92640a]">
                     Analysis can run with partial photo coverage. Results may
@@ -1194,68 +1265,10 @@ export default function Home() {
                   )}
                 </div>
 
-                {enableVisionDebug && (
-                <div className="mt-5 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-2.5">
-                  <div className="space-y-2 text-sm">
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="font-semibold text-[#6B7280]">
-                        Button Enabled
-                      </span>
-                      <span className="font-bold text-[#111827]">
-                        {String(runAnalysisButtonEnabled)}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="font-semibold text-[#6B7280]">
-                        Disable Reason
-                      </span>
-                      <span className="font-bold text-[#111827]">
-                        {buttonDisabledReason}
-                      </span>
-                    </div>
-                    <div className="grid gap-2 border-t border-[#E5E7EB] pt-2 text-xs text-[#6B7280] sm:grid-cols-2">
-                      <span>uploadedPhotoCount: {uploadedPhotoCount}</span>
-                      <span>photos.length: {photos.length}</span>
-                      <span>categorizedPhotoCount: {categorizedPhotoCount}</span>
-                      <span>coverageScore: {photoCoverageScore}</span>
-                      <span>analysisInProgress: {String(analysisInProgress)}</span>
-                      <span>
-                        button.disabled: {String(!runAnalysisButtonEnabled)}
-                      </span>
-                      <span className="sm:col-span-2">
-                        missingCategories:{" "}
-                        {missingCategories.length
-                          ? missingCategories.join(", ")
-                          : "none"}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-                )}
-
-                <button
-                  className="btn-press mt-5 flex w-full items-center justify-center rounded-xl bg-[#D4A017] px-5 py-3 text-sm font-extrabold text-[#111827] shadow-[0_2px_8px_rgba(212,160,23,0.3)] transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
-                  disabled={!runAnalysisButtonEnabled}
-                  onClick={() => analyzePhotos()}
-                  type="button"
-                >
-                  {isAnalyzing ? "Analyzing photos..." : "Run AI Analysis"}
-                </button>
-                {failedAnalysisPhotos.length > 0 && (
-                  <button
-                    className="btn-press mt-3 flex w-full items-center justify-center rounded-xl border border-[#D4A017] bg-white px-5 py-3 text-sm font-extrabold text-[#92640a] transition hover:bg-[#FDF9EE] disabled:cursor-not-allowed disabled:opacity-40"
-                    disabled={isAnalyzing}
-                    onClick={() =>
-                      analyzePhotos(
-                        new Set(
-                          failedAnalysisPhotos.map((photo) => photo.id),
-                        ),
-                      )
-                    }
-                    type="button"
-                  >
-                    Retry Failed Photos
-                  </button>
+                {!categoriesReadyForReview && photos.length > 0 && (
+                  <p className="mt-3 text-sm font-semibold text-[#6B7280]">
+                    AI room identification starts automatically after upload.
+                  </p>
                 )}
                 {analysisError && (
                   <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
@@ -1268,15 +1281,15 @@ export default function Home() {
                 description="Create the seller-facing optimization report."
                 isComplete={Boolean(report)}
                 step={3}
-                title="Generate Report"
+                title="Generate Listing Report"
               >
                 <button
                   className="btn-press flex w-full items-center justify-center rounded-xl bg-[#1B2238] px-5 py-3 text-sm font-extrabold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
-                  disabled={findings.length === 0}
-                  onClick={createReport}
+                  disabled={!canGenerateReport}
+                  onClick={generateListingReport}
                   type="button"
                 >
-                  Create Report
+                  Generate Listing Report
                 </button>
               </StepCard>
 
@@ -1304,7 +1317,8 @@ export default function Home() {
                     Uploaded Photos
                   </h2>
                   <p className="mt-1 text-sm text-[#6B7280]">
-                    Confirm or adjust room categories before analysis.
+                    Review AI-suggested categories, then correct any photo that
+                    needs a different room.
                   </p>
                 </div>
 
@@ -1330,20 +1344,48 @@ export default function Home() {
                         <div className="aspect-[4/3] bg-[#F3F4F6]">
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
-                            alt={photo.name}
+                            alt={photo.displayLabel}
                             className="h-full w-full object-cover"
                             src={photo.url}
                           />
                         </div>
                         <div className="space-y-3 p-3.5">
-                          <div>
-                            <p className="truncate text-sm font-bold text-[#111827]">
-                              {photo.name}
-                            </p>
-                            <p className="text-xs text-[#9CA3AF]">
-                              {formatBytes(photo.size)}
-                            </p>
+                          <div className="flex min-w-0 items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-bold text-[#111827]">
+                                {photo.displayLabel}
+                              </p>
+                              <p className="text-xs text-[#9CA3AF]">
+                                {formatBytes(photo.size)}
+                              </p>
+                            </div>
+                            <span
+                              className={`shrink-0 rounded-full px-2 py-1 text-[11px] font-extrabold ${
+                                photo.categoryStatus === "agent_corrected"
+                                  ? "bg-blue-50 text-blue-700"
+                                : photo.categoryStatus === "ai_suggested"
+                                    ? "bg-green-50 text-green-700"
+                                    : photo.categoryStatus === "analysis_failed"
+                                      ? "bg-red-50 text-red-700"
+                                    : "bg-[#F3F4F6] text-[#6B7280]"
+                              }`}
+                            >
+                              {photo.categoryStatus === "agent_corrected"
+                                ? "Agent corrected"
+                                : photo.categoryStatus === "ai_suggested"
+                                  ? "AI identified"
+                                  : photo.categoryStatus === "analysis_failed"
+                                    ? "Analysis unavailable"
+                                    : "Analyzing..."}
+                            </span>
                           </div>
+                          <button
+                            className="text-xs font-bold text-[#6B7280] underline underline-offset-2 hover:text-[#111827]"
+                            onClick={() => removePhoto(photo.id)}
+                            type="button"
+                          >
+                            Remove
+                          </button>
                           <select
                             className="rep-input py-2 text-sm"
                             onChange={(event) =>
@@ -1352,8 +1394,11 @@ export default function Home() {
                                 event.target.value as RoomType,
                               )
                             }
-                            value={photo.area}
+                            value={photo.area ?? ""}
                           >
+                            <option disabled value="">
+                              Identifying room
+                            </option>
                             {propertyAreas.map((area) => (
                               <option key={area} value={area}>
                                 {area}
@@ -1361,8 +1406,16 @@ export default function Home() {
                             ))}
                           </select>
                           {photo.analysisFailure && (
-                            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">
-                              {photo.analysisFailure.message}
+                            <div className="space-y-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">
+                              <p>Analysis unavailable</p>
+                              <button
+                                className="text-xs font-extrabold text-red-800 underline underline-offset-2"
+                                disabled={isAnalyzing}
+                                onClick={() => analyzePhotos(new Set([photo.id]))}
+                                type="button"
+                              >
+                                Retry photo
+                              </button>
                             </div>
                           )}
                         </div>
@@ -1373,7 +1426,8 @@ export default function Home() {
               </SectionCard>
 
               {enableVisionDebug &&
-                (visionDebugResponse || analysisError || pipelineTrace.length > 0) && (
+                visionDebugResponse &&
+                !visionDebugResponse.error && (
                 <SectionCard>
                   <div>
                     <p className="label-caps text-[#B45309]">
@@ -1388,93 +1442,6 @@ export default function Home() {
                       readiness contribution, and final report copy.
                     </p>
                   </div>
-
-                  {pipelineTrace.length > 0 && (
-                    <div className="mt-5 rounded-xl border border-[#E5E7EB] bg-[#F9FAFB] p-4">
-                      <h3 className="text-sm font-bold text-[#111827]">
-                        Pipeline Trace
-                      </h3>
-                      <div className="mt-3 space-y-3">
-                        {pipelineTrace.map((entry, index) => (
-                          <article
-                            className="rounded-lg border border-[#E5E7EB] bg-white p-3"
-                            key={`${entry.stage}-${index}`}
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <div>
-                                <p className="text-sm font-bold text-[#111827]">
-                                  {entry.stage
-                                    .split("_")
-                                    .map(
-                                      (word) =>
-                                        word.charAt(0).toUpperCase() +
-                                        word.slice(1),
-                                    )
-                                    .join(" ")}
-                                </p>
-                                <p className="mt-1 text-sm leading-6 text-[#6B7280]">
-                                  {entry.message}
-                                </p>
-                              </div>
-                              <span
-                                className={
-                                  entry.status === "success"
-                                    ? "rounded-full bg-green-50 px-2.5 py-1 text-xs font-extrabold text-green-700"
-                                    : entry.status === "failure"
-                                      ? "rounded-full bg-red-50 px-2.5 py-1 text-xs font-extrabold text-red-700"
-                                      : entry.status === "skipped"
-                                        ? "rounded-full bg-[#F3F4F6] px-2.5 py-1 text-xs font-extrabold text-[#6B7280]"
-                                        : "rounded-full border border-[rgba(212,160,23,0.35)] bg-[rgba(212,160,23,0.12)] px-2.5 py-1 text-xs font-extrabold text-[#92640a]"
-                                }
-                              >
-                                {entry.status}
-                              </span>
-                            </div>
-                            {entry.data && (
-                              <pre className="mt-3 max-h-40 overflow-auto rounded-lg bg-[#111827] p-3 text-xs leading-5 text-white">
-                                {JSON.stringify(entry.data, null, 2)}
-                              </pre>
-                            )}
-                          </article>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {visionDebugResponse?.error && (
-                    <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-4">
-                      <p className="text-sm font-extrabold text-red-700">
-                        {visionDebugResponse.errorType ?? "vision_error"}
-                      </p>
-                      <p className="mt-2 text-sm leading-6 text-red-700">
-                        {visionDebugResponse.error}
-                      </p>
-                    </div>
-                  )}
-
-                  {visionDebugResponse && !visionDebugResponse.error && (
-                    <>
-                      <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                        <MetricCard
-                          label="Route"
-                          value={
-                            (visionDebugResponse.findings?.length ?? 0) > 0
-                              ? "Called"
-                              : "No Results"
-                          }
-                        />
-                        <MetricCard
-                          label="Model"
-                          value={visionDebugResponse.model ?? "Unknown"}
-                        />
-                        <MetricCard
-                          label="Photos"
-                          value={
-                            visionDebugResponse.requestedPhotoCount ??
-                            photos.length
-                          }
-                        />
-                      </div>
 
                       <div className="mt-5 space-y-4">
                         {realPhotoValidationRows.map((row) => (
@@ -1591,76 +1558,6 @@ export default function Home() {
                           </article>
                         ))}
                       </div>
-
-                      <div className="mt-5 rounded-xl border border-[#E5E7EB] bg-[#F9FAFB] p-4">
-                        <h3 className="text-sm font-bold text-[#111827]">
-                          Validation Checklist
-                        </h3>
-                        <div className="mt-3 space-y-3 text-sm leading-6 text-[#6B7280]">
-                          <p>
-                            Collect expected category, whether visible findings
-                            are supported, unsupported recommendations,
-                            duplicate findings, readiness-score impact, report
-                            issues, and PDF issues for each real-photo run.
-                          </p>
-                          <p>
-                            Confidence issues:{" "}
-                            {visionValidationFlags.length
-                              ? visionValidationFlags.join(" ")
-                              : "No low-confidence or missing-result flags were detected in the returned JSON."}
-                          </p>
-                          <p>
-                            Truthfulness guardrail: do not treat hidden defects,
-                            age, value, ROI, code compliance, structure, or
-                            system condition as known unless they are clearly
-                            visible in the photo.
-                          </p>
-                        </div>
-                      </div>
-
-                      {report && (
-                        <div className="mt-5 rounded-xl border border-[#E5E7EB] bg-white p-4">
-                          <h3 className="text-sm font-bold text-[#111827]">
-                            Final Report Output
-                          </h3>
-                          <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
-                            <div>
-                              <dt className="label-caps">Readiness</dt>
-                              <dd className="mt-1 text-[#6B7280]">
-                                {report.readinessScore.status} (
-                                {report.readinessScore.score}/100)
-                              </dd>
-                            </div>
-                            <div>
-                              <dt className="label-caps">Confidence</dt>
-                              <dd className="mt-1 text-[#6B7280]">
-                                {report.confidenceLevel}
-                              </dd>
-                            </div>
-                            <div className="sm:col-span-2">
-                              <dt className="label-caps">Summary</dt>
-                              <dd className="mt-1 text-[#6B7280]">
-                                {report.propertySummary}
-                              </dd>
-                            </div>
-                            <div className="sm:col-span-2">
-                              <dt className="label-caps">
-                                Top Opportunities
-                              </dt>
-                              <dd className="mt-1 text-[#6B7280]">
-                                {report.topOpportunities
-                                  .map(
-                                    (recommendation) =>
-                                      `${recommendation.improvement.category}: ${recommendation.improvement.improvementName}`,
-                                  )
-                                  .join("; ")}
-                              </dd>
-                            </div>
-                          </dl>
-                        </div>
-                      )}
-                    </>
-                  )}
                 </SectionCard>
               )}
 

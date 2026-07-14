@@ -56,7 +56,7 @@ export type AnalysisValidationIssue = {
 export type AnalyzePhotoInput = {
   id: string;
   name: string;
-  assignedCategory: RoomType;
+  assignedCategory?: RoomType;
   fileMimeType?: string;
   fileSize?: number;
   dataUrl: string;
@@ -154,7 +154,7 @@ export function safeErrorMessage(code: AnalysisErrorCode) {
     case "too_many_photos":
       return `Upload ${PHOTO_UPLOAD_LIMITS.maxPhotos} photos or fewer.`;
     case "duplicate_photo":
-      return "This photo is already in the upload queue.";
+      return "Duplicate photo skipped.";
     case "unsupported_mime_type":
       return "Only JPEG, PNG, and WebP photos are supported.";
     case "file_too_large":
@@ -402,8 +402,9 @@ export function validateAnalyzePhotosBody(body: unknown): {
     seenIds.add(photoId);
 
     if (
-      typeof assignedCategory !== "string" ||
-      !isSupportedRoomType(assignedCategory)
+      assignedCategory != null &&
+      (typeof assignedCategory !== "string" ||
+        !isSupportedRoomType(assignedCategory))
     ) {
       fail("malformed_request");
       return;
@@ -462,7 +463,7 @@ export function validateAnalyzePhotosBody(body: unknown): {
       name: photoName,
       fileMimeType: normalizedFileMimeType,
       fileSize,
-      assignedCategory,
+      assignedCategory: assignedCategory as RoomType | undefined,
       dataUrl: parsedDataUrl.dataUrl,
       decodedByteLength: parsedDataUrl.decodedByteLength,
     });

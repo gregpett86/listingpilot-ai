@@ -16,8 +16,9 @@ import type {
 type PhotoForValidation = {
   id: string;
   name: string;
+  displayLabel: string;
   url: string;
-  area: RoomType;
+  area: RoomType | null;
   analysisFailure?: PhotoAnalysisFailure;
 };
 
@@ -151,10 +152,15 @@ export function buildRealPhotoValidationRows({
 
   return photos.map((photo) => {
     const finding = findingByPhotoId.get(photo.id);
-    const observation = observationByRoom.get(photo.area);
+    const assignedRoom = photo.area ?? finding?.suggestedCategory;
+    const observation = assignedRoom
+      ? observationByRoom.get(assignedRoom)
+      : undefined;
     const recommendation = finding?.categoryMismatch
       ? undefined
-      : recommendationByRoom.get(photo.area);
+      : assignedRoom
+        ? recommendationByRoom.get(assignedRoom)
+        : undefined;
     const categoryMatchStatus = finding
       ? finding.categoryMismatch
         ? "Mismatch"
@@ -163,9 +169,9 @@ export function buildRealPhotoValidationRows({
 
     return {
       photoId: photo.id,
-      photoName: photo.name,
+      photoName: photo.displayLabel,
       previewUrl: photo.url,
-      assignedRoom: photo.area,
+      assignedRoom: assignedRoom ?? "Living Room",
       visionRoom: finding?.suggestedCategory,
       categoryMatchStatus,
       condition: finding?.condition,
