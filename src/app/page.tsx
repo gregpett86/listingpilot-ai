@@ -17,7 +17,6 @@ import {
   calculatePropertyReadinessScore,
   recommendImprovements,
   type ConfidenceLevel,
-  type CostRange,
   type ImprovementRecommendation,
   type PropertyConditionObservation,
   type PropertyReadinessScore,
@@ -31,9 +30,21 @@ import {
 import {
   buildRoomSummariesForSynthesis,
   fallbackWholePropertyAnalysis,
+  type RoomSummaryForSynthesis,
   type WholePropertyAnalysis,
   type WholePropertySynthesisResponse,
 } from "@/lib/whole-property-synthesis";
+import {
+  groupChecklistItems,
+  limitationsNote,
+  buildReadinessPresentation,
+  buildSellerChecklist,
+  buildSellerRoomSummaries,
+  type EffortLevel,
+  type SellerPreparationItem,
+  type SellerReadinessPresentation,
+  type SellerRoomSummary,
+} from "@/lib/seller-report";
 import {
   PHOTO_UPLOAD_LIMITS,
   SUPPORTED_IMAGE_MIME_TYPES,
@@ -73,24 +84,25 @@ type AreaFinding = {
 };
 
 type ImprovementPlan = {
+  id: string;
   area: RoomType;
   priority: RecommendationPriority;
   recommendation: string;
-  estimatedCost: string;
-  potentialAddedValue: string;
+  effortLevel: EffortLevel;
+  estimatedTime: string;
+  reason: string;
 };
 
 type OptimizationReport = {
   readinessScore: PropertyReadinessScore;
+  readinessPresentation: SellerReadinessPresentation;
   confidenceLevel: ConfidenceLevel;
   wholePropertyAnalysis: WholePropertyAnalysis;
-  recommendedInvestmentRange: string;
-  potentialAddedSaleValueRange: string;
-  topOpportunities: ImprovementRecommendation[];
   propertySummary: string;
-  marketValue: string;
   findings: AreaFinding[];
   improvements: ImprovementPlan[];
+  roomSummaries: SellerRoomSummary[];
+  sellerChecklist: SellerPreparationItem[];
   asIsSummary: string;
   improveSummary: string;
   marketingStrategy: string[];
@@ -159,22 +171,6 @@ function calculateCoverageScore({
   return "Limited";
 }
 
-function formatCurrencyRange(range: CostRange) {
-  return `$${range.min.toLocaleString()} - $${range.max.toLocaleString()}`;
-}
-
-function summarizeCurrencyRanges(ranges: CostRange[]) {
-  const totals = ranges.reduce(
-    (sum, range) => ({
-      min: sum.min + range.min,
-      max: sum.max + range.max,
-    }),
-    { min: 0, max: 0 },
-  );
-
-  return formatCurrencyRange(totals);
-}
-
 function fileToDataUrl(file: File) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -227,12 +223,12 @@ function buildFindings({
           (recommendation) =>
             recommendation.improvement.improvementName,
         ),
-      sellerTalkingPoints:
-        roomRecommendations[0]?.sellerTalkingPoints.slice(0, 2) ??
-        [
-          `${observation.roomType} should be reviewed with the seller before photography.`,
-          "The recommendation plan should stay focused on visible buyer confidence signals.",
-        ],
+      sellerTalkingPoints: [
+        `${observation.roomType} is summarized from visible presentation in the uploaded photos.`,
+        roomRecommendations[0]
+          ? `${roomRecommendations[0].improvement.improvementName} is the top visible preparation item for this room.`
+          : "No major preparation item was selected for this room.",
+      ],
     };
   });
 }
@@ -242,53 +238,48 @@ function buildReport({
   findings,
   readinessScore,
   recommendations,
+  roomSummaries,
   wholePropertyAnalysis,
 }: {
   confidenceLevel: ConfidenceLevel;
   findings: AreaFinding[];
   readinessScore: PropertyReadinessScore;
   recommendations: ImprovementRecommendation[];
+  roomSummaries: RoomSummaryForSynthesis[];
   wholePropertyAnalysis: WholePropertyAnalysis;
 }): OptimizationReport {
-  const topOpportunities = recommendations.slice(0, 3);
-  const recommendedInvestmentRange = summarizeCurrencyRanges(
-    topOpportunities.map(
-      (recommendation) => recommendation.improvement.typicalCostRange,
-    ),
-  );
-  const potentialAddedSaleValueRange = summarizeCurrencyRanges(
-    topOpportunities.map(
-      (recommendation) =>
-        recommendation.improvement.potentialAddedSaleValueRange,
-    ),
-  );
-
-  const improvements: ImprovementPlan[] = recommendations
-    .slice(0, 8)
-    .map((recommendation) => ({
-      area: recommendation.improvement.category,
-      priority: recommendation.priority,
-      recommendation: recommendation.improvement.improvementName,
-      estimatedCost: formatCurrencyRange(
-        recommendation.improvement.typicalCostRange,
-      ),
-      potentialAddedValue: formatCurrencyRange(
-        recommendation.improvement.potentialAddedSaleValueRange,
-      ),
-    }));
+  const sellerChecklist = buildSellerChecklist({
+    recommendations,
+    synthesis: wholePropertyAnalysis,
+  });
+  const improvements: ImprovementPlan[] = sellerChecklist.map((item) => ({
+    id: item.id,
+    area: item.room,
+    priority: item.priority,
+    recommendation: item.task,
+    effortLevel: item.effortLevel,
+    estimatedTime: item.estimatedTime,
+    reason: item.reason,
+  }));
+  const readinessPresentation = buildReadinessPresentation({
+    confidence: confidenceLevel,
+    readinessScore,
+    synthesis: wholePropertyAnalysis,
+  });
 
   return {
     readinessScore,
+    readinessPresentation,
     confidenceLevel,
     wholePropertyAnalysis,
-    recommendedInvestmentRange,
-    potentialAddedSaleValueRange,
-    topOpportunities,
     propertySummary: wholePropertyAnalysis.executiveSummary,
-    marketValue:
-      "Current Market Value: Placeholder pending CMA, recent comparable sales, and agent pricing strategy.",
     findings,
     improvements,
+    roomSummaries: buildSellerRoomSummaries({
+      preparationItems: sellerChecklist,
+      roomSummaries,
+    }),
+    sellerChecklist,
     asIsSummary: wholePropertyAnalysis.buyerAppeal,
     improveSummary: wholePropertyAnalysis.listingReadinessNarrative,
     marketingStrategy:
@@ -302,7 +293,6 @@ function buildReport({
           ],
     nextSteps: [
       "Collect any missing room or exterior photos before finalizing recommendations.",
-      "Review cost ranges with preferred vendors for local pricing accuracy.",
       "Choose which high-priority improvements the seller can complete before photography.",
       "Pair the final report with CMA pricing guidance and launch timeline.",
     ],
@@ -331,7 +321,10 @@ function ensurePdfSpace(doc: jsPDF, y: number, neededSpace = 28) {
   return 20;
 }
 
-function exportReportPdf(report: OptimizationReport) {
+function exportReportPdf(
+  report: OptimizationReport,
+  excludedItemIds = new Set<string>(),
+) {
   const doc = new jsPDF({ unit: "mm", format: "letter" });
   const margin = 18;
   const contentWidth = 180;
@@ -376,6 +369,23 @@ function exportReportPdf(report: OptimizationReport) {
     y += 2;
   };
 
+  const addPageNumbers = () => {
+    const pageCount = doc.getNumberOfPages();
+
+    for (let page = 1; page <= pageCount; page += 1) {
+      doc.setPage(page);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+      doc.setTextColor(148, 163, 184);
+      doc.text(`Page ${page} of ${pageCount}`, 178, 270);
+    }
+  };
+
+  const includedChecklist = report.sellerChecklist.filter(
+    (item) => !excludedItemIds.has(item.id),
+  );
+  const checklistGroups = groupChecklistItems(includedChecklist);
+
   doc.setFillColor(...navy);
   doc.rect(0, 0, 216, 18, "F");
   doc.setFillColor(...gold);
@@ -397,71 +407,78 @@ function exportReportPdf(report: OptimizationReport) {
   doc.line(margin, y, margin + contentWidth, y);
   y += 10;
 
-  addSectionTitle("Property Summary");
+  addSectionTitle("A. Property Overview");
+  addParagraph(
+    "Home Sale Readiness Report prepared from the uploaded ListingPilot AI photo analysis.",
+  );
+
+  addSectionTitle("B. Executive Summary");
   addParagraph(report.propertySummary);
 
-  addSectionTitle("Top Selling Features");
+  addSectionTitle("C. Listing Readiness");
+  addParagraph(
+    `${report.readinessPresentation.score}/100 - ${report.readinessPresentation.label} | Confidence: ${report.readinessPresentation.confidence}`,
+  );
+  addParagraph(report.readinessPresentation.narrative);
+
+  addSectionTitle("D. Top Selling Features");
   addBulletList(report.wholePropertyAnalysis.topSellingFeatures);
 
-  addSectionTitle("Top Improvement Priorities");
+  addSectionTitle("E. Highest-Impact Preparation Priorities");
   addBulletList(report.wholePropertyAnalysis.topImprovementPriorities);
 
-  addSectionTitle("Staging Observations");
-  addBulletList(report.wholePropertyAnalysis.stagingObservations);
-
-  addSectionTitle("Property Readiness");
-  addParagraph(
-    `${report.readinessScore.status}: ${report.wholePropertyAnalysis.listingReadinessNarrative}`,
-  );
-  addParagraph(
-    `Readiness Score: ${report.readinessScore.score}/100 | Confidence Level: ${report.confidenceLevel} | Recommended Investment Range: ${report.recommendedInvestmentRange} | Potential Added Sale Value Range: ${report.potentialAddedSaleValueRange}`,
-  );
-  addBulletList(
-    report.topOpportunities.map(
-      (recommendation) =>
-        `${recommendation.improvement.category}: ${recommendation.improvement.improvementName}`,
-    ),
-  );
-
-  addSectionTitle("Current Market Value");
-  addParagraph(report.marketValue);
-
-  addSectionTitle("AI Findings");
-  report.findings.forEach((finding) => {
-    y = ensurePdfSpace(doc, y, 30);
+  addSectionTitle("F. Room-by-Room Summary");
+  report.roomSummaries.forEach((summary) => {
+    y = ensurePdfSpace(doc, y, 38);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(11);
     doc.setTextColor(...navy);
-    doc.text(`${finding.area} (${finding.confidence} confidence)`, margin, y);
-    y += 6;
-    addParagraph(finding.condition);
-    addBulletList(finding.sellerTalkingPoints);
-  });
-
-  addSectionTitle("Recommended Improvements");
-  report.improvements.forEach((improvement) => {
-    y = ensurePdfSpace(doc, y, 24);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(11);
-    doc.setTextColor(...navy);
-    doc.text(`${improvement.area} - ${improvement.priority} Priority`, margin, y);
-    y += 6;
-    addParagraph(improvement.recommendation);
-    addParagraph(
-      `Estimated Cost Range: ${improvement.estimatedCost} | Potential Added Sale Value Range: ${improvement.potentialAddedValue}`,
+    doc.text(
+      `${summary.room} | ${summary.overallCondition} | ${summary.confidence} confidence`,
+      margin,
+      y,
     );
+    y += 6;
+    addParagraph(summary.shortSummary);
+    addBulletList([
+      `Strongest feature: ${summary.strongestSellingFeature}`,
+      `Top preparation item: ${summary.topPreparationRecommendation}`,
+    ]);
   });
 
-  addSectionTitle("Sell As-Is vs Improve Comparison");
-  addParagraph(`Sell As-Is: ${report.asIsSummary}`);
-  addParagraph(`Improve Before Launch: ${report.improveSummary}`);
+  addSectionTitle("G. Seller Preparation Checklist");
+  Object.entries(checklistGroups).forEach(([group, items]) => {
+    if (items.length === 0) return;
 
-  addSectionTitle("Marketing Strategy");
+    y = ensurePdfSpace(doc, y, 18);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.setTextColor(...navy);
+    doc.text(group, margin, y);
+    y += 6;
+
+    items.forEach((item) => {
+      y = ensurePdfSpace(doc, y, 22);
+      doc.setDrawColor(212, 160, 23);
+      doc.rect(margin, y - 3, 4, 4);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10);
+      doc.setTextColor(...navy);
+      doc.text(`${item.task} (${item.room})`, margin + 7, y);
+      y += 5;
+      addParagraph(
+        `${item.priority} priority | ${item.effortLevel} | Estimated time: ${item.estimatedTime}. ${item.reason}`,
+      );
+    });
+  });
+
+  addSectionTitle("H. Marketing Highlights");
   addBulletList(report.marketingStrategy);
 
-  addSectionTitle("Next Steps");
-  addBulletList(report.nextSteps);
+  addSectionTitle("I. Important Limitations / Agent Review Note");
+  addParagraph(limitationsNote);
 
+  addPageNumbers();
   doc.save("listingpilot-home-sale-optimization-report.pdf");
 }
 
@@ -483,6 +500,9 @@ export default function Home() {
   const [visionDebugResponse, setVisionDebugResponse] =
     useState<VisionAnalysisResponse | null>(null);
   const [report, setReport] = useState<OptimizationReport | null>(null);
+  const [excludedPreparationItemIds, setExcludedPreparationItemIds] = useState(
+    () => new Set<string>(),
+  );
   const objectUrlsRef = useRef(new Set<string>());
   const analysisQueueRef = useRef(new Set<string>());
   const isAnalyzingRef = useRef(false);
@@ -1135,9 +1155,11 @@ export default function Home() {
         findings: nextFindings,
         readinessScore: nextReadinessScore,
         recommendations: nextRecommendations,
+        roomSummaries,
         wholePropertyAnalysis,
       }),
     );
+    setExcludedPreparationItemIds(new Set());
   }
 
   const categorizedPhotoCount = coverageItems.filter(
@@ -1160,6 +1182,25 @@ export default function Home() {
   const canGenerateReport = categoriesReadyForReview && !analysisInProgress;
   const recommendedCountMet =
     photos.length >= 12 && photos.length <= PHOTO_UPLOAD_LIMITS.maxPhotos;
+  const visibleChecklistItems =
+    report?.sellerChecklist.filter(
+      (item) => !excludedPreparationItemIds.has(item.id),
+    ) ?? [];
+  const checklistGroups = groupChecklistItems(visibleChecklistItems);
+
+  function togglePreparationItem(itemId: string) {
+    setExcludedPreparationItemIds((currentIds) => {
+      const nextIds = new Set(currentIds);
+
+      if (nextIds.has(itemId)) {
+        nextIds.delete(itemId);
+      } else {
+        nextIds.add(itemId);
+      }
+
+      return nextIds;
+    });
+  }
 
   return (
     <RealtyEdgeShell>
@@ -1356,7 +1397,10 @@ export default function Home() {
                 <button
                   className="btn-press flex w-full items-center justify-center rounded-xl bg-[#D4A017] px-5 py-3 text-sm font-extrabold text-[#111827] shadow-[0_2px_8px_rgba(212,160,23,0.3)] transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
                   disabled={!report}
-                  onClick={() => report && exportReportPdf(report)}
+                  onClick={() =>
+                    report &&
+                    exportReportPdf(report, excludedPreparationItemIds)
+                  }
                   type="button"
                 >
                   Download PDF
@@ -1639,27 +1683,12 @@ export default function Home() {
                       value={`${readinessScore.score}/100`}
                     />
                     <MetricCard
-                      label="Investment"
-                      value={summarizeCurrencyRanges(
-                        recommendations
-                          .slice(0, 3)
-                          .map(
-                            (recommendation) =>
-                              recommendation.improvement.typicalCostRange,
-                          ),
-                      )}
+                      label="Preparation Items"
+                      value={String(recommendations.slice(0, 8).length)}
                     />
                     <MetricCard
-                      label="Added Value"
-                      value={summarizeCurrencyRanges(
-                        recommendations
-                          .slice(0, 3)
-                          .map(
-                            (recommendation) =>
-                              recommendation.improvement
-                                .potentialAddedSaleValueRange,
-                          ),
-                      )}
+                      label="Confidence"
+                      value={analysisConfidence}
                     />
                   </div>
 
@@ -1738,92 +1767,60 @@ export default function Home() {
                       Generated Report
                     </p>
                     <h2 className="mt-2 text-xl font-extrabold text-[#111827]">
-                      Home Sale Optimization Report
+                      Home Sale Readiness Report
                     </h2>
                   </div>
 
-                  <div className="grid gap-0 lg:grid-cols-[1fr_320px]">
+                  <div>
                     <div className="space-y-6 p-5">
                   <section>
                     <h3 className="text-base font-bold text-[#111827]">
-                      Property Summary
+                      A. Property Overview
+                    </h3>
+                    <p className="mt-2 text-sm leading-6 text-[#6B7280]">
+                      Home Sale Readiness Report prepared from the uploaded
+                      ListingPilot AI photo analysis.
+                    </p>
+                  </section>
+
+                  <section>
+                    <h3 className="text-base font-bold text-[#111827]">
+                      B. Executive Summary
                     </h3>
                     <p className="mt-2 text-sm leading-6 text-[#6B7280]">
                       {report.propertySummary}
                     </p>
                   </section>
 
-                  <section className="grid gap-3 md:grid-cols-3">
-                    <div className="rounded-xl border border-[#E5E7EB] p-4">
-                      <h3 className="text-sm font-bold text-[#111827]">
-                        Top Selling Features
-                      </h3>
-                      <ul className="mt-2 space-y-2 text-sm leading-6 text-[#6B7280]">
-                        {report.wholePropertyAnalysis.topSellingFeatures.map(
-                          (feature) => (
-                            <li key={feature}>{feature}</li>
-                          ),
-                        )}
-                      </ul>
-                    </div>
-                    <div className="rounded-xl border border-[#E5E7EB] p-4">
-                      <h3 className="text-sm font-bold text-[#111827]">
-                        Top Improvement Priorities
-                      </h3>
-                      <ul className="mt-2 space-y-2 text-sm leading-6 text-[#6B7280]">
-                        {report.wholePropertyAnalysis.topImprovementPriorities.map(
-                          (priority) => (
-                            <li key={priority}>{priority}</li>
-                          ),
-                        )}
-                      </ul>
-                    </div>
-                    <div className="rounded-xl border border-[#E5E7EB] p-4">
-                      <h3 className="text-sm font-bold text-[#111827]">
-                        Staging Observations
-                      </h3>
-                      <ul className="mt-2 space-y-2 text-sm leading-6 text-[#6B7280]">
-                        {report.wholePropertyAnalysis.stagingObservations.map(
-                          (observation) => (
-                            <li key={observation}>{observation}</li>
-                          ),
-                        )}
-                      </ul>
-                    </div>
-                  </section>
-
                   <section>
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <h3 className="text-base font-bold text-[#111827]">
-                          Property Readiness
+                          C. Listing Readiness
                         </h3>
                         <p className="mt-2 text-sm leading-6 text-[#6B7280]">
-                          {
-                            report.wholePropertyAnalysis
-                              .listingReadinessNarrative
-                          }
+                          {report.readinessPresentation.narrative}
                         </p>
                       </div>
                       <ConfidenceBadge confidence={report.confidenceLevel} />
                     </div>
                     <div className="mt-3 grid gap-3 md:grid-cols-3">
                       <div className="rounded-xl border border-[#E5E7EB] bg-[#F9FAFB] p-4">
-                        <p className="label-caps">Status</p>
+                        <p className="label-caps">Score</p>
                         <p className="mt-2 font-bold text-[#111827]">
-                          {report.readinessScore.status}
+                          {report.readinessPresentation.score}/100
                         </p>
                       </div>
                       <div className="rounded-xl border border-[#E5E7EB] bg-[#F9FAFB] p-4">
-                        <p className="label-caps">Investment</p>
+                        <p className="label-caps">Readiness Label</p>
                         <p className="mt-2 font-bold text-[#111827]">
-                          {report.recommendedInvestmentRange}
+                          {report.readinessPresentation.label}
                         </p>
                       </div>
                       <div className="rounded-xl border border-[#E5E7EB] bg-[#F9FAFB] p-4">
-                        <p className="label-caps">Added Value</p>
+                        <p className="label-caps">Confidence</p>
                         <p className="mt-2 font-bold text-[#111827]">
-                          {report.potentialAddedSaleValueRange}
+                          {report.readinessPresentation.confidence}
                         </p>
                       </div>
                     </div>
@@ -1831,121 +1828,155 @@ export default function Home() {
 
                   <section>
                     <h3 className="text-base font-bold text-[#111827]">
-                      Current Market Value
+                      D. Top Selling Features
                     </h3>
-                    <p className="mt-2 rounded-lg border border-dashed border-[#D1D5DB] bg-[#F9FAFB] p-3 text-sm leading-6 text-[#6B7280]">
-                      {report.marketValue}
-                    </p>
+                    <ul className="mt-3 grid gap-2 text-sm leading-6 text-[#6B7280] md:grid-cols-2">
+                      {report.wholePropertyAnalysis.topSellingFeatures.map(
+                        (feature) => (
+                          <li
+                            className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-2"
+                            key={feature}
+                          >
+                            {feature}
+                          </li>
+                        ),
+                      )}
+                    </ul>
                   </section>
 
                   <section>
-                    <h3 className="text-base font-bold text-[#111827]">AI Findings</h3>
-                    <div className="mt-3 space-y-3">
-                      {report.findings.map((finding) => (
-                        <div
-                          key={finding.area}
+                    <h3 className="text-base font-bold text-[#111827]">
+                      E. Highest-Impact Preparation Priorities
+                    </h3>
+                    <ul className="mt-3 space-y-2 text-sm leading-6 text-[#6B7280]">
+                      {report.wholePropertyAnalysis.topImprovementPriorities.map(
+                        (priority) => (
+                          <li key={priority}>{priority}</li>
+                        ),
+                      )}
+                    </ul>
+                  </section>
+
+                  <section>
+                    <h3 className="text-base font-bold text-[#111827]">
+                      F. Room-by-Room Summary
+                    </h3>
+                    <div className="mt-3 grid gap-3 xl:grid-cols-2">
+                      {report.roomSummaries.map((summary) => (
+                        <article
                           className="rounded-xl border border-[#E5E7EB] p-4"
+                          key={summary.room}
                         >
-                          <div className="flex items-center justify-between gap-3">
-                            <p className="font-bold text-[#111827]">{finding.area}</p>
-                                <ConfidenceBadge
-                                  confidence={finding.confidence}
-                                />
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="font-bold text-[#111827]">
+                                {summary.room}
+                              </p>
+                              <p className="mt-1 text-xs font-bold uppercase tracking-[0.08em] text-[#9CA3AF]">
+                                {summary.overallCondition}
+                              </p>
+                            </div>
+                            <ConfidenceBadge confidence={summary.confidence} />
                           </div>
-                          <p className="mt-2 text-sm leading-6 text-[#6B7280]">
-                            {finding.condition}
+                          <p className="mt-3 text-sm leading-6 text-[#6B7280]">
+                            {summary.shortSummary}
                           </p>
-                          <p className="label-caps mt-3">
-                            Seller Talking Points
-                          </p>
-                          <ul className="mt-2 space-y-1 text-sm leading-6 text-[#6B7280]">
-                            {finding.sellerTalkingPoints.map((point) => (
-                              <li key={point}>{point}</li>
-                            ))}
-                          </ul>
-                        </div>
+                          <dl className="mt-3 grid gap-3 text-sm">
+                            <div>
+                              <dt className="label-caps">
+                                Strongest Selling Feature
+                              </dt>
+                              <dd className="mt-1 text-[#6B7280]">
+                                {summary.strongestSellingFeature}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt className="label-caps">
+                                Top Preparation Recommendation
+                              </dt>
+                              <dd className="mt-1 text-[#6B7280]">
+                                {summary.topPreparationRecommendation}
+                              </dd>
+                            </div>
+                          </dl>
+                        </article>
                       ))}
                     </div>
                   </section>
 
                   <section>
                     <h3 className="text-base font-bold text-[#111827]">
-                      Recommended Improvements
+                      G. Seller Preparation Checklist
                     </h3>
-                    <div className="mt-3 overflow-hidden rounded-xl border border-[#E5E7EB]">
-                      <div className="grid grid-cols-[1fr_120px_140px] bg-[#F9FAFB] px-4 py-3">
-                        <span className="label-caps">Recommendation</span>
-                        <span className="label-caps">Cost</span>
-                        <span className="label-caps">Added Value</span>
-                      </div>
-                      {report.improvements.map((improvement) => (
-                        <div
-                          key={`${improvement.area}-${improvement.recommendation}`}
-                          className="grid grid-cols-[1fr_120px_140px] gap-3 border-t border-[#F3F4F6] px-4 py-3 text-sm"
-                        >
-                          <div>
-                            <p className="font-bold text-[#111827]">
-                              {improvement.area} - {improvement.priority}
-                            </p>
-                            <p className="mt-1 leading-6 text-[#6B7280]">
-                              {improvement.recommendation}
-                            </p>
+                    <p className="mt-1 text-sm leading-6 text-[#6B7280]">
+                      Use the checkboxes to include or exclude individual items
+                      from the seller-facing PDF.
+                    </p>
+                    <div className="mt-3 space-y-4">
+                      {Object.entries(checklistGroups).map(([group, items]) =>
+                        items.length > 0 ? (
+                          <div key={group}>
+                            <h4 className="text-sm font-bold text-[#111827]">
+                              {group}
+                            </h4>
+                            <div className="mt-2 space-y-2">
+                              {items.map((item) => (
+                                <label
+                                  className="flex gap-3 rounded-xl border border-[#E5E7EB] p-3 text-sm"
+                                  key={item.id}
+                                >
+                                  <input
+                                    checked={
+                                      !excludedPreparationItemIds.has(item.id)
+                                    }
+                                    className="mt-1 h-4 w-4"
+                                    onChange={() =>
+                                      togglePreparationItem(item.id)
+                                    }
+                                    type="checkbox"
+                                  />
+                                  <span>
+                                    <span className="block font-bold text-[#111827]">
+                                      {item.task}
+                                    </span>
+                                    <span className="mt-1 block text-[#6B7280]">
+                                      {item.room} | {item.priority} priority |{" "}
+                                      {item.effortLevel} | Estimated time:{" "}
+                                      {item.estimatedTime}
+                                    </span>
+                                    <span className="mt-1 block leading-6 text-[#6B7280]">
+                                      {item.reason}
+                                    </span>
+                                  </span>
+                                </label>
+                              ))}
+                            </div>
                           </div>
-                          <span className="font-semibold text-[#374151]">
-                            {improvement.estimatedCost}
-                          </span>
-                          <span className="font-semibold text-[#374151]">
-                            {improvement.potentialAddedValue}
-                          </span>
-                        </div>
-                      ))}
+                        ) : null,
+                      )}
                     </div>
                   </section>
 
                   <section>
                     <h3 className="text-base font-bold text-[#111827]">
-                      Sell As-Is vs Improve Comparison
+                      H. Marketing Highlights
                     </h3>
-                    <div className="mt-3 grid gap-3 md:grid-cols-2">
-                      <div className="rounded-xl border border-[#E5E7EB] bg-[#F9FAFB] p-4">
-                        <p className="font-bold text-[#111827]">Sell As-Is</p>
-                        <p className="mt-2 text-sm leading-6 text-[#6B7280]">
-                          {report.asIsSummary}
-                        </p>
-                      </div>
-                      <div className="rounded-xl border border-[rgba(212,160,23,0.28)] bg-[rgba(212,160,23,0.08)] p-4">
-                        <p className="font-bold text-[#92640a]">
-                          Improve Before Launch
-                        </p>
-                        <p className="mt-2 text-sm leading-6 text-[#6B7280]">
-                          {report.improveSummary}
-                        </p>
-                      </div>
-                    </div>
-                  </section>
-                </div>
-
-                <aside className="border-t border-[#E5E7EB] bg-[#F9FAFB] p-5 lg:border-l lg:border-t-0">
-                  <section>
-                    <h3 className="text-base font-bold text-[#111827]">
-                      Marketing Strategy
-                    </h3>
-                    <ul className="mt-3 space-y-3 text-sm leading-6 text-[#6B7280]">
+                    <ul className="mt-3 space-y-2 text-sm leading-6 text-[#6B7280]">
                       {report.marketingStrategy.map((strategy) => (
                         <li key={strategy}>{strategy}</li>
                       ))}
                     </ul>
                   </section>
 
-                  <section className="mt-8">
-                    <h3 className="text-base font-bold text-[#111827]">Next Steps</h3>
-                    <ol className="mt-3 space-y-3 text-sm leading-6 text-[#6B7280]">
-                      {report.nextSteps.map((step) => (
-                        <li key={step}>{step}</li>
-                      ))}
-                    </ol>
+                  <section>
+                    <h3 className="text-base font-bold text-[#111827]">
+                      I. Important Limitations / Agent Review Note
+                    </h3>
+                    <p className="mt-2 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-3 text-sm leading-6 text-[#6B7280]">
+                      {limitationsNote}
+                    </p>
                   </section>
-                </aside>
+                </div>
               </div>
             </div>
           )}

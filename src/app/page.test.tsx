@@ -5,6 +5,38 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import Home from "./page";
 import { validPngBase64 } from "@/test/fixtures/images";
 
+const { pdfTextLog } = vi.hoisted(() => ({
+  pdfTextLog: [] as string[],
+}));
+
+vi.mock("jspdf", () => ({
+  jsPDF: class {
+    addPage() {}
+    getNumberOfPages() {
+      return 1;
+    }
+    line() {}
+    rect() {}
+    save() {}
+    setDrawColor() {}
+    setFillColor() {}
+    setFont() {}
+    setFontSize() {}
+    setPage() {}
+    setTextColor() {}
+    splitTextToSize(text: string | string[]) {
+      return Array.isArray(text) ? text : [text];
+    }
+    text(text: string | string[]) {
+      if (Array.isArray(text)) {
+        pdfTextLog.push(...text);
+      } else {
+        pdfTextLog.push(text);
+      }
+    }
+  },
+}));
+
 vi.mock("next/image", () => ({
   default: (props: React.ImgHTMLAttributes<HTMLImageElement>) => (
     // eslint-disable-next-line @next/next/no-img-element
@@ -127,6 +159,7 @@ describe("ListingPilot page", () => {
   const originalRevokeObjectURL = URL.revokeObjectURL;
 
   beforeEach(() => {
+    pdfTextLog.length = 0;
     URL.createObjectURL = vi.fn(() => "blob:http://localhost/photo");
     URL.revokeObjectURL = vi.fn();
     global.fetch = mockSuccessfulClassification();
@@ -485,15 +518,86 @@ describe("ListingPilot page", () => {
       screen.getByRole("button", { name: "Generate Listing Report" }),
     );
 
-    expect(await screen.findAllByText("Property Readiness")).toHaveLength(2);
+    expect(await screen.findByText("C. Listing Readiness")).toBeInTheDocument();
     expect(
       screen.getByText(
         "This home already presents very well, with the kitchen giving the listing a bright, polished first impression.",
       ),
     ).toBeInTheDocument();
-    expect(screen.getByText("Top Selling Features")).toBeInTheDocument();
+    expect(screen.getByText("D. Top Selling Features")).toBeInTheDocument();
+    expect(
+      screen.getByText("E. Highest-Impact Preparation Priorities"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("F. Room-by-Room Summary")).toBeInTheDocument();
+    expect(
+      screen.getByText("G. Seller Preparation Checklist"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Optional Enhancements")).toBeInTheDocument();
+    expect(screen.getAllByText(/Quick Win/).length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText(/Estimated time: Under 1 hour/).length,
+    ).toBeGreaterThan(0);
+    expect(
+      screen.getByText("I. Important Limitations / Agent Review Note"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/based only on visible presentation/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Investment")).not.toBeInTheDocument();
+    expect(screen.queryByText("Added Value")).not.toBeInTheDocument();
+    expect(screen.queryByText("Current Market Value")).not.toBeInTheDocument();
+    expect(screen.queryByText(/\$[0-9]/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/ROI/i)).not.toBeInTheDocument();
     expect(screen.getAllByText("Analysis unavailable").length).toBeGreaterThan(0);
     expect(screen.queryByText("failed.png")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Download PDF" }));
+
+    const pdfText = pdfTextLog.join(" ");
+    expect(pdfText).toContain("Home Sale Readiness Report");
+    expect(pdfText).toContain("G. Seller Preparation Checklist");
+    expect(pdfText).not.toContain("failed.png");
+    expect(pdfText).not.toContain("scored.png");
+    expect(pdfText).not.toContain("photo-");
+    expect(pdfText).not.toContain("Raw Vision JSON");
+    expect(pdfText).not.toContain("Estimated Cost");
+    expect(pdfText).not.toContain("Added Value");
+  });
+
+  it("uses fallback synthesis when the whole-property pass fails", async () => {
+    const fetchMock = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      if (String(url).includes("/api/synthesize-report")) {
+        return new Response(JSON.stringify({ error: "unavailable" }), {
+          status: 502,
+        });
+      }
+
+      const payload = JSON.parse(String(init?.body)) as {
+        photos: Array<{ id: string }>;
+      };
+
+      return new Response(
+        JSON.stringify({
+          findings: payload.photos.map((photo) => visionFinding(photo.id)),
+          failedPhotos: [],
+          photoResults: [],
+          requestedPhotoCount: payload.photos.length,
+        }),
+        { status: 200 },
+      );
+    });
+    global.fetch = fetchMock;
+    const { container } = render(<Home />);
+
+    await userEvent.upload(uploadInput(container), pngFile("fallback.png"));
+    await waitFor(() => expect(screen.getByRole("combobox")).toHaveValue("Kitchen"));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Generate Listing Report" }),
+    );
+
+    expect(await screen.findByText("B. Executive Summary")).toBeInTheDocument();
+    expect(screen.getAllByText(/uploaded photos/i).length).toBeGreaterThan(0);
+    expect(screen.getByText("C. Listing Readiness")).toBeInTheDocument();
   });
 
   it("shows a clean duplicate message without filenames", async () => {
