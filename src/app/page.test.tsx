@@ -59,6 +59,36 @@ function visionFinding(
   };
 }
 
+function synthesisResponse() {
+  return new Response(
+    JSON.stringify({
+      wholePropertyAnalysis: {
+        executiveSummary:
+          "This home already presents very well, with the kitchen giving the listing a bright, polished first impression.",
+        overallCondition: "Strong visible presentation.",
+        buyerAppeal:
+          "The home should appeal to buyers looking for a clean, photo-ready presentation.",
+        listingReadinessNarrative:
+          "The property is close to listing ready after targeted cosmetic preparation.",
+        topSellingFeatures: [
+          "Bright kitchen",
+          "Clean shared spaces",
+          "Strong first impression",
+        ],
+        topImprovementPriorities: ["Refresh visible cabinet hardware"],
+        stagingObservations: ["Keep counters clear for listing photos"],
+        overallConfidence: "High",
+        marketingHighlights: [
+          "Excellent natural lighting",
+          "Move-in-ready presentation",
+        ],
+      },
+      usedFallback: false,
+    }),
+    { status: 200 },
+  );
+}
+
 function uploadInput(container: HTMLElement) {
   const input = container.querySelector("input[type='file']");
 
@@ -70,7 +100,11 @@ function uploadInput(container: HTMLElement) {
 }
 
 function mockSuccessfulClassification() {
-  return vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+  return vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+    if (String(url).includes("/api/synthesize-report")) {
+      return synthesisResponse();
+    }
+
     const payload = JSON.parse(String(init?.body)) as {
       photos: Array<{ id: string }>;
     };
@@ -412,7 +446,11 @@ describe("ListingPilot page", () => {
   });
 
   it("generates a report from successful photos and excludes failed photos", async () => {
-    const fetchMock = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+    const fetchMock = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      if (String(url).includes("/api/synthesize-report")) {
+        return synthesisResponse();
+      }
+
       const payload = JSON.parse(String(init?.body)) as {
         photos: Array<{ id: string; name: string }>;
       };
@@ -448,6 +486,12 @@ describe("ListingPilot page", () => {
     );
 
     expect(await screen.findAllByText("Property Readiness")).toHaveLength(2);
+    expect(
+      screen.getByText(
+        "This home already presents very well, with the kitchen giving the listing a bright, polished first impression.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Top Selling Features")).toBeInTheDocument();
     expect(screen.getAllByText("Analysis unavailable").length).toBeGreaterThan(0);
     expect(screen.queryByText("failed.png")).not.toBeInTheDocument();
   });

@@ -29,6 +29,12 @@ import {
   buildRoomObservations,
 } from "@/lib/listing-analysis";
 import {
+  buildRoomSummariesForSynthesis,
+  fallbackWholePropertyAnalysis,
+  type WholePropertyAnalysis,
+  type WholePropertySynthesisResponse,
+} from "@/lib/whole-property-synthesis";
+import {
   PHOTO_UPLOAD_LIMITS,
   SUPPORTED_IMAGE_MIME_TYPES,
   type AnalysisValidationIssue,
@@ -77,6 +83,7 @@ type ImprovementPlan = {
 type OptimizationReport = {
   readinessScore: PropertyReadinessScore;
   confidenceLevel: ConfidenceLevel;
+  wholePropertyAnalysis: WholePropertyAnalysis;
   recommendedInvestmentRange: string;
   potentialAddedSaleValueRange: string;
   topOpportunities: ImprovementRecommendation[];
@@ -233,19 +240,16 @@ function buildFindings({
 function buildReport({
   confidenceLevel,
   findings,
-  photos,
   readinessScore,
   recommendations,
+  wholePropertyAnalysis,
 }: {
   confidenceLevel: ConfidenceLevel;
   findings: AreaFinding[];
-  photos: PhotoItem[];
   readinessScore: PropertyReadinessScore;
   recommendations: ImprovementRecommendation[];
+  wholePropertyAnalysis: WholePropertyAnalysis;
 }): OptimizationReport {
-  const strongestAreas = findings
-    .filter((finding) => finding.confidence !== "Low")
-    .map((finding) => finding.area);
   const topOpportunities = recommendations.slice(0, 3);
   const recommendedInvestmentRange = summarizeCurrencyRanges(
     topOpportunities.map(
@@ -276,28 +280,26 @@ function buildReport({
   return {
     readinessScore,
     confidenceLevel,
+    wholePropertyAnalysis,
     recommendedInvestmentRange,
     potentialAddedSaleValueRange,
     topOpportunities,
-    propertySummary: `Analysis based on ${photos.length} uploaded photos across ${findings.length} property areas. Readiness status: ${readinessScore.status} (${readinessScore.score}/100) with ${confidenceLevel.toLowerCase()} confidence. ${
-      strongestAreas.length
-        ? `The strongest coverage is in ${strongestAreas.join(", ")}.`
-        : "Additional photos would improve confidence before a final seller presentation."
-    }`,
+    propertySummary: wholePropertyAnalysis.executiveSummary,
     marketValue:
       "Current Market Value: Placeholder pending CMA, recent comparable sales, and agent pricing strategy.",
     findings,
     improvements,
-    asIsSummary:
-      "Selling as-is may reduce prep time and upfront spend, but visible cosmetic friction can weaken online conversion and give buyers more negotiation room.",
-    improveSummary:
-      "Completing targeted, photo-visible improvements can strengthen launch presentation, support pricing confidence, and create cleaner seller talking points.",
-    marketingStrategy: [
-      "Lead with the home's strongest lifestyle spaces in listing photos and social previews.",
-      "Use improvement notes to frame seller preparation as strategic, not cosmetic overreach.",
-      "Highlight fresh exterior, clean kitchen surfaces, and bright shared spaces in remarks.",
-      "Position completed work as buyer confidence signals during showings and follow-up.",
-    ],
+    asIsSummary: wholePropertyAnalysis.buyerAppeal,
+    improveSummary: wholePropertyAnalysis.listingReadinessNarrative,
+    marketingStrategy:
+      wholePropertyAnalysis.marketingHighlights.length > 0
+        ? wholePropertyAnalysis.marketingHighlights
+        : [
+            "Lead with the home's strongest lifestyle spaces in listing photos and social previews.",
+            "Use improvement notes to frame seller preparation as strategic, not cosmetic overreach.",
+            "Highlight fresh exterior, clean kitchen surfaces, and bright shared spaces in remarks.",
+            "Position completed work as buyer confidence signals during showings and follow-up.",
+          ],
     nextSteps: [
       "Collect any missing room or exterior photos before finalizing recommendations.",
       "Review cost ranges with preferred vendors for local pricing accuracy.",
@@ -398,9 +400,18 @@ function exportReportPdf(report: OptimizationReport) {
   addSectionTitle("Property Summary");
   addParagraph(report.propertySummary);
 
+  addSectionTitle("Top Selling Features");
+  addBulletList(report.wholePropertyAnalysis.topSellingFeatures);
+
+  addSectionTitle("Top Improvement Priorities");
+  addBulletList(report.wholePropertyAnalysis.topImprovementPriorities);
+
+  addSectionTitle("Staging Observations");
+  addBulletList(report.wholePropertyAnalysis.stagingObservations);
+
   addSectionTitle("Property Readiness");
   addParagraph(
-    `${report.readinessScore.status}: ${report.readinessScore.summary}`,
+    `${report.readinessScore.status}: ${report.wholePropertyAnalysis.listingReadinessNarrative}`,
   );
   addParagraph(
     `Readiness Score: ${report.readinessScore.score}/100 | Confidence Level: ${report.confidenceLevel} | Recommended Investment Range: ${report.recommendedInvestmentRange} | Potential Added Sale Value Range: ${report.potentialAddedSaleValueRange}`,
@@ -1001,7 +1012,7 @@ export default function Home() {
     }
   }
 
-  function generateListingReport() {
+  async function generateListingReport() {
     if (isAnalyzingRef.current) {
       setAnalysisError("AI is still identifying rooms. Please wait a moment.");
       return;
@@ -1057,16 +1068,62 @@ export default function Home() {
       observations: nextObservations,
       recommendations: nextRecommendations,
     });
-
-    setFindings(
-      buildFindings({
-        observations: nextObservations,
-        recommendations: nextRecommendations,
-      }),
+    const roomSummaries = buildRoomSummariesForSynthesis({
+      observations: nextObservations,
+      recommendations: nextRecommendations,
+    });
+    const missingRecommendedRooms = recommendedCoverageCategories.filter(
+      (category) =>
+        !nextObservations.some(
+          (observation) => observation.roomType === category,
+        ),
     );
+    const synthesisRequest = {
+      roomSummaries,
+      readiness: nextReadinessScore,
+      coverage: {
+        uploadedPhotoCount: photos.length,
+        analyzedRoomCount: nextObservations.length,
+        coveredRooms: nextObservations.map(
+          (observation) => observation.roomType,
+        ),
+        missingRecommendedRooms,
+      },
+    };
+    let wholePropertyAnalysis =
+      fallbackWholePropertyAnalysis(synthesisRequest);
+
+    try {
+      const synthesisResponse = await fetch("/api/synthesize-report", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(synthesisRequest),
+      });
+
+      if (synthesisResponse.ok) {
+        const synthesisResult =
+          (await synthesisResponse.json()) as WholePropertySynthesisResponse;
+
+        wholePropertyAnalysis =
+          synthesisResult.wholePropertyAnalysis ?? wholePropertyAnalysis;
+      }
+    } catch (error) {
+      if (enableVisionDebug) {
+        console.warn("Whole-property synthesis failed; using fallback.", error);
+      }
+    }
+    const nextFindings = buildFindings({
+      observations: nextObservations,
+      recommendations: nextRecommendations,
+    });
+    const nextAnalysisConfidence = confidenceFromVisionFindings(confirmedFindings);
+
+    setFindings(nextFindings);
     setRecommendations(nextRecommendations);
     setReadinessScore(nextReadinessScore);
-    setAnalysisConfidence(confidenceFromVisionFindings(confirmedFindings));
+    setAnalysisConfidence(nextAnalysisConfidence);
     setAnalysisError("");
     setVisionDebugResponse({
       ...visionDebugResponse,
@@ -1074,14 +1131,11 @@ export default function Home() {
     });
     setReport(
       buildReport({
-        confidenceLevel: confidenceFromVisionFindings(confirmedFindings),
-        findings: buildFindings({
-          observations: nextObservations,
-          recommendations: nextRecommendations,
-        }),
-        photos,
+        confidenceLevel: nextAnalysisConfidence,
+        findings: nextFindings,
         readinessScore: nextReadinessScore,
         recommendations: nextRecommendations,
+        wholePropertyAnalysis,
       }),
     );
   }
@@ -1699,6 +1753,45 @@ export default function Home() {
                     </p>
                   </section>
 
+                  <section className="grid gap-3 md:grid-cols-3">
+                    <div className="rounded-xl border border-[#E5E7EB] p-4">
+                      <h3 className="text-sm font-bold text-[#111827]">
+                        Top Selling Features
+                      </h3>
+                      <ul className="mt-2 space-y-2 text-sm leading-6 text-[#6B7280]">
+                        {report.wholePropertyAnalysis.topSellingFeatures.map(
+                          (feature) => (
+                            <li key={feature}>{feature}</li>
+                          ),
+                        )}
+                      </ul>
+                    </div>
+                    <div className="rounded-xl border border-[#E5E7EB] p-4">
+                      <h3 className="text-sm font-bold text-[#111827]">
+                        Top Improvement Priorities
+                      </h3>
+                      <ul className="mt-2 space-y-2 text-sm leading-6 text-[#6B7280]">
+                        {report.wholePropertyAnalysis.topImprovementPriorities.map(
+                          (priority) => (
+                            <li key={priority}>{priority}</li>
+                          ),
+                        )}
+                      </ul>
+                    </div>
+                    <div className="rounded-xl border border-[#E5E7EB] p-4">
+                      <h3 className="text-sm font-bold text-[#111827]">
+                        Staging Observations
+                      </h3>
+                      <ul className="mt-2 space-y-2 text-sm leading-6 text-[#6B7280]">
+                        {report.wholePropertyAnalysis.stagingObservations.map(
+                          (observation) => (
+                            <li key={observation}>{observation}</li>
+                          ),
+                        )}
+                      </ul>
+                    </div>
+                  </section>
+
                   <section>
                     <div className="flex items-start justify-between gap-3">
                       <div>
@@ -1706,7 +1799,10 @@ export default function Home() {
                           Property Readiness
                         </h3>
                         <p className="mt-2 text-sm leading-6 text-[#6B7280]">
-                          {report.readinessScore.summary}
+                          {
+                            report.wholePropertyAnalysis
+                              .listingReadinessNarrative
+                          }
                         </p>
                       </div>
                       <ConfidenceBadge confidence={report.confidenceLevel} />
