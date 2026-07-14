@@ -1248,7 +1248,10 @@ export default function Home() {
         <RealtyEdgePageHeader />
         <div className="flex-1 overflow-y-auto">
           <section className="mx-auto w-full max-w-[1400px] px-5 py-6 sm:px-8">
-            <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+            <div
+              className="flex min-w-0 max-w-[760px] flex-col gap-5"
+              data-testid="workflow-stack"
+            >
               <div className="grid grid-cols-3 gap-3">
                 {[
                   { label: "Photos", value: photos.length },
@@ -1509,7 +1512,10 @@ export default function Home() {
                     </div>
                   </div>
                 ) : (
-                  <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                  <div
+                    className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+                    data-testid="photo-review-grid"
+                  >
                     {photos.map((photo) => {
                       const finding = visionFindingsByPhotoId.get(photo.id);
                       const aiRoom =

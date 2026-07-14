@@ -203,6 +203,29 @@ describe("ListingPilot page", () => {
     expect(screen.queryByText("Not analyzed")).not.toBeInTheDocument();
   });
 
+  it("renders workflow steps in a readable vertical stack", () => {
+    render(<Home />);
+
+    const workflow = screen.getByTestId("workflow-stack");
+    const upload = screen.getByText("Upload Photos");
+    const review = screen.getByText("Review Categories");
+    const generate = screen.getByText("Generate Listing Report");
+    const exportPdf = screen.getByText("Export PDF");
+
+    expect(workflow.className).toContain("flex-col");
+    expect(workflow.className).not.toContain("md:grid-cols");
+    expect(workflow.className).not.toContain("xl:grid-cols");
+    expect(upload.compareDocumentPosition(review)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    expect(review.compareDocumentPosition(generate)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    expect(generate.compareDocumentPosition(exportPdf)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+  });
+
   it("cleans up object URLs on unmount and never shows generated filenames", async () => {
     const { container, unmount } = render(<Home />);
 
@@ -243,6 +266,12 @@ describe("ListingPilot page", () => {
     ) as { photos: unknown[] };
 
     expect(payload.photos).toHaveLength(20);
+    expect(screen.getByTestId("photo-review-grid").className).toContain(
+      "xl:grid-cols-4",
+    );
+    expect(screen.getByTestId("photo-review-grid").className).toContain(
+      "lg:grid-cols-3",
+    );
     expect(screen.getByText("Photo 1")).toBeInTheDocument();
     expect(screen.getByText("Photo 20")).toBeInTheDocument();
     expect(screen.queryByText("Photo 21")).not.toBeInTheDocument();
