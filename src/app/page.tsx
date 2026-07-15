@@ -488,6 +488,7 @@ export default function Home() {
   const [photos, setPhotos] = useState<PhotoItem[]>([]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isGeneratingReport, setIsGeneratingReport] = useState(false);
+  const [analysisCompletionMessage, setAnalysisCompletionMessage] = useState("");
   const [findings, setFindings] = useState<AreaFinding[]>([]);
   const [recommendations, setRecommendations] = useState<
     ImprovementRecommendation[]
@@ -529,6 +530,18 @@ export default function Home() {
   useEffect(() => {
     latestFindingsRef.current = visionDebugResponse?.findings ?? [];
   }, [visionDebugResponse]);
+
+  useEffect(() => {
+    if (!analysisCompletionMessage) {
+      return undefined;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setAnalysisCompletionMessage("");
+    }, 4000);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [analysisCompletionMessage]);
 
   const photoCounts = useMemo(
     () =>
@@ -816,6 +829,7 @@ export default function Home() {
     isAnalyzingRef.current = true;
     setIsAnalyzing(true);
     setAnalysisError("");
+    setAnalysisCompletionMessage("");
     setPhotos((currentPhotos) =>
       currentPhotos.map((photo) =>
         activePhotoIds.has(photo.id)
@@ -1009,6 +1023,13 @@ export default function Home() {
         setAnalysisError(
           `${failedPhotos.length} photo${failedPhotos.length === 1 ? "" : "s"} could not be analyzed. Successful findings were preserved.`,
         );
+        setAnalysisCompletionMessage(
+          `Analysis complete with ${failedPhotos.length} photo${
+            failedPhotos.length === 1 ? "" : "s"
+          } needing attention`,
+        );
+      } else {
+        setAnalysisCompletionMessage("Photo analysis complete");
       }
       setVisionDebugResponse({
         ...result,
@@ -1217,6 +1238,12 @@ export default function Home() {
     currentAnalyzingPhoto?.area ??
     currentAnalyzingFinding?.suggestedCategory ??
     (analysisInProgress ? "Identifying room" : "None");
+  const currentAnalyzingLabel =
+    currentAnalyzingPhoto?.displayLabel ??
+    (analysisInProgress && photos.length > 0
+      ? `Photo ${Math.min(completedAnalysisCount + 1, photos.length)}`
+      : "");
+  const estimatedAnalysisSeconds = Math.max(5, remainingAnalysisCount * 3);
   const categoriesReadyForReview = successfulClassifiedPhotoCount > 0;
   const canGenerateReport =
     categoriesReadyForReview && !analysisInProgress && !isGeneratingReport;
@@ -1247,11 +1274,71 @@ export default function Home() {
       <div className="flex h-full flex-col bg-[#F0F2F8] text-[#111827]">
         <RealtyEdgePageHeader />
         <div className="flex-1 overflow-y-auto">
+          {analysisInProgress && (
+            <div
+              aria-live="polite"
+              className="fixed inset-0 z-50 flex items-center justify-center bg-[#111827]/30 px-4 backdrop-blur-[2px]"
+              data-testid="analysis-progress-overlay"
+            >
+              <div className="w-full max-w-2xl rounded-2xl border border-[#E5E7EB] bg-white p-6 text-center shadow-2xl motion-safe:animate-pulse motion-reduce:animate-none sm:p-8">
+                <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-full bg-[rgba(212,160,23,0.14)] text-2xl font-black text-[#B45309] shadow-[0_0_28px_rgba(212,160,23,0.3)] motion-safe:animate-pulse motion-reduce:animate-none">
+                  AI
+                </div>
+                <h2 className="text-2xl font-extrabold text-[#111827] sm:text-3xl">
+                  AI is analyzing your property photos
+                </h2>
+                <p className="mt-3 text-base font-bold text-[#374151]">
+                  {completedAnalysisCount} of {photos.length} photos complete
+                  <span className="mx-2 text-[#D4A017]">·</span>
+                  {analysisProgressPercent}%
+                </p>
+                {currentAnalyzingLabel && (
+                  <p className="mt-2 text-sm font-semibold text-[#6B7280]">
+                    Reviewing {currentAnalyzingLabel}
+                  </p>
+                )}
+                <p className="mt-1 text-sm font-semibold text-[#6B7280]">
+                  Current room:{" "}
+                  <span className="font-extrabold text-[#111827]">
+                    {currentAnalyzingRoom}
+                  </span>
+                </p>
+                <div className="mt-6 h-5 overflow-hidden rounded-full bg-[#E5E7EB]">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-[#D4A017] via-[#F2D27B] to-[#D4A017] transition-all duration-500 motion-safe:animate-pulse motion-reduce:transition-none"
+                    style={{ width: `${analysisProgressPercent}%` }}
+                  />
+                </div>
+                <p className="mt-4 text-sm font-semibold text-[#6B7280]">
+                  {remainingAnalysisCount} photo
+                  {remainingAnalysisCount === 1 ? "" : "s"} remaining
+                </p>
+                <p className="mt-1 text-sm font-semibold text-[#6B7280]">
+                  Estimated time remaining: about {estimatedAnalysisSeconds}{" "}
+                  seconds
+                </p>
+              </div>
+            </div>
+          )}
+          {!analysisInProgress && analysisCompletionMessage && (
+            <div className="sticky top-0 z-40 mx-auto mt-4 max-w-[760px] px-5 sm:px-8">
+              <div
+                className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-center text-sm font-extrabold text-green-800 shadow-lg"
+                data-testid="analysis-completion-message"
+              >
+                {analysisCompletionMessage}
+              </div>
+            </div>
+          )}
           <section className="mx-auto w-full max-w-[1400px] px-5 py-6 sm:px-8">
             <div
-              className="flex min-w-0 max-w-[760px] flex-col gap-5"
-              data-testid="workflow-stack"
+              className="grid gap-6 lg:grid-cols-[minmax(0,760px)_minmax(320px,1fr)]"
+              data-testid="workflow-shell"
             >
+              <div
+                className="flex min-w-0 flex-col gap-5"
+                data-testid="workflow-stack"
+              >
               <div className="grid grid-cols-3 gap-3">
                 {[
                   { label: "Photos", value: photos.length },
@@ -1487,7 +1574,10 @@ export default function Home() {
               </StepCard>
             </div>
 
-            <div className="mt-6 min-w-0 space-y-5">
+              <div
+                className="min-w-0 space-y-5 lg:max-h-[calc(100vh-150px)] lg:overflow-y-auto lg:pr-1"
+                data-testid="compact-photo-review"
+              >
               <SectionCard>
                 <div>
                   <h2 className="text-base font-bold text-[#111827]">
@@ -1513,7 +1603,7 @@ export default function Home() {
                   </div>
                 ) : (
                   <div
-                    className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+                    className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-1"
                     data-testid="photo-review-grid"
                   >
                     {photos.map((photo) => {
@@ -1628,7 +1718,13 @@ export default function Home() {
                   </div>
                 )}
               </SectionCard>
+              </div>
+            </div>
 
+            <div
+              className="mt-6 min-w-0 space-y-5"
+              data-testid="analyzed-results-section"
+            >
               {enableVisionDebug &&
                 visionDebugResponse &&
                 !visionDebugResponse.error && (

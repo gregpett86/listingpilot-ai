@@ -203,18 +203,24 @@ describe("ListingPilot page", () => {
     expect(screen.queryByText("Not analyzed")).not.toBeInTheDocument();
   });
 
-  it("renders workflow steps in a readable vertical stack", () => {
+  it("renders workflow steps in the left column with compact photo review on the right", () => {
     render(<Home />);
 
+    const shell = screen.getByTestId("workflow-shell");
     const workflow = screen.getByTestId("workflow-stack");
+    const compactReview = screen.getByTestId("compact-photo-review");
+    const analyzedResults = screen.getByTestId("analyzed-results-section");
     const upload = screen.getByText("Upload Photos");
     const review = screen.getByText("Review Categories");
     const generate = screen.getByText("Generate Listing Report");
     const exportPdf = screen.getByText("Export PDF");
 
+    expect(shell.className).toContain("lg:grid-cols");
     expect(workflow.className).toContain("flex-col");
     expect(workflow.className).not.toContain("md:grid-cols");
     expect(workflow.className).not.toContain("xl:grid-cols");
+    expect(compactReview.className).toContain("lg:overflow-y-auto");
+    expect(compactReview.contains(analyzedResults)).toBe(false);
     expect(upload.compareDocumentPosition(review)).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
@@ -267,10 +273,10 @@ describe("ListingPilot page", () => {
 
     expect(payload.photos).toHaveLength(20);
     expect(screen.getByTestId("photo-review-grid").className).toContain(
-      "xl:grid-cols-4",
+      "sm:grid-cols-2",
     );
     expect(screen.getByTestId("photo-review-grid").className).toContain(
-      "lg:grid-cols-3",
+      "lg:grid-cols-1",
     );
     expect(screen.getByText("Photo 1")).toBeInTheDocument();
     expect(screen.getByText("Photo 20")).toBeInTheDocument();
@@ -314,6 +320,8 @@ describe("ListingPilot page", () => {
     expect(screen.getByText("AI Room")).toBeInTheDocument();
     expect(screen.getByText("Condition")).toBeInTheDocument();
     expect(screen.getByText("Average")).toBeInTheDocument();
+    expect(screen.queryByTestId("analysis-progress-overlay")).not.toBeInTheDocument();
+    expect(screen.getByText("Photo analysis complete")).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Generate Report" }),
     ).toBeEnabled();
@@ -441,6 +449,9 @@ describe("ListingPilot page", () => {
     ]);
 
     await screen.findAllByText("Analysis unavailable");
+    expect(
+      screen.getByText("Analysis complete with 1 photo needing attention"),
+    ).toBeInTheDocument();
     const selects = screen.getAllByRole("combobox");
     await userEvent.selectOptions(selects[0], "Bathroom");
     expect(selects[0]).toHaveValue("Bathroom");
@@ -507,6 +518,18 @@ describe("ListingPilot page", () => {
     await userEvent.upload(uploadInput(container), pngFile());
 
     expect(await screen.findByText("Analyzing...")).toBeInTheDocument();
+    const overlay = await screen.findByTestId("analysis-progress-overlay");
+
+    expect(
+      screen.getByText("AI is analyzing your property photos"),
+    ).toBeInTheDocument();
+    expect(overlay.textContent).toContain("0 of 1 photos complete");
+    expect(overlay.textContent).toContain("0%");
+    expect(overlay.textContent).toContain("Reviewing Photo 1");
+    expect(overlay.textContent).toContain("1 photo remaining");
+    expect(overlay.textContent).not.toContain("kitchen.png");
+    expect(overlay.textContent).not.toContain("photo-");
+    expect(overlay.innerHTML).toContain("motion-reduce");
     expect(
       screen.getByRole("button", { name: "Generate Report" }),
     ).toBeDisabled();
@@ -553,6 +576,14 @@ describe("ListingPilot page", () => {
     );
 
     expect(await screen.findByText("C. Listing Readiness")).toBeInTheDocument();
+    const compactReview = screen.getByTestId("compact-photo-review");
+    const analyzedResults = screen.getByTestId("analyzed-results-section");
+
+    expect(compactReview.contains(analyzedResults)).toBe(false);
+    expect(analyzedResults.className).toContain("mt-6");
+    expect(compactReview.compareDocumentPosition(analyzedResults)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
     expect(
       screen.getByText(
         "This home already presents very well, with the kitchen giving the listing a bright, polished first impression.",
