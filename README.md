@@ -1,36 +1,74 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# ListingPilot AI
 
-## Getting Started
+ListingPilot AI creates a seller-facing home sale optimization report from real estate photos. The current product analyzes uploaded JPEG, PNG, and WebP photos with OpenAI Vision, ranks visible preparation opportunities, calculates property readiness, renders an in-app report, and exports a PDF.
 
-First, run the development server:
+## Requirements
+
+- Node.js 20.x
+- npm 10.x or newer
+
+## Local Setup
+
+```bash
+npm install
+```
+
+Create a local environment file such as `.env.local`:
+
+```bash
+OPENAI_API_KEY=sk-...
+OPENAI_VISION_MODEL=gpt-4.1-mini
+NEXT_PUBLIC_ENABLE_VISION_DEBUG=false
+```
+
+## Environment Variables
+
+- `OPENAI_API_KEY`: Required. Server-side key used by `src/app/api/analyze-photos/route.ts`.
+- `OPENAI_VISION_MODEL`: Optional. Defaults to `gpt-4.1-mini`.
+- `NEXT_PUBLIC_ENABLE_VISION_DEBUG`: Optional. Set to `true` only in development when inspecting sanitized Vision diagnostics. Keep `false` for beta users and production.
+
+## Commands
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm test
+npm run lint
+npx tsc --noEmit
+npm run build
+npm run start
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Current Architecture
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- `src/app/page.tsx`: Main client workflow for photo upload, validation feedback, Vision analysis orchestration, retrying failed photos, report preview, and PDF export.
+- `src/app/api/analyze-photos/route.ts`: Server-only OpenAI Vision boundary. Validates request payloads, sanitizes errors, calls OpenAI, and returns per-photo success/failure results.
+- `src/lib/analysis-schema.ts`: Shared upload limits, supported MIME types, request/response types, data URL parsing, validation helpers, and safe error messages.
+- `src/lib/property-intelligence/*`: Room taxonomy, condition scoring, readiness scoring, seller talking points, improvement library, and recommendation ranking.
+- `src/test/*` and `*.test.ts(x)`: Vitest test fixtures and automated coverage for validation, API behavior, recommendations, readiness, taxonomy, retry, and object URL cleanup.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Beta Upload Limits
 
-## Learn More
+- Supported formats: JPEG, PNG, WebP
+- Maximum photos: 30
+- Maximum size per photo: 8 MB
+- Maximum total decoded image payload: 80 MB
+- Duplicate handling: same name, size, and MIME type is rejected client-side
 
-To learn more about Next.js, take a look at the following resources:
+## Known Limitations
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- No database or saved report history yet.
+- No authentication, billing, or user/team management.
+- Market value/CMA content remains a placeholder and must be paired with agent pricing guidance.
+- Image analysis depends on OpenAI availability and model quality.
+- Invalid/corrupt image detection is best-effort in the browser and strict for server data URL/base64 payloads.
+- PDF export is client-side and should be visually reviewed during real-photo beta validation.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Deployment Checklist
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- `OPENAI_API_KEY` configured in the deployment environment.
+- `NEXT_PUBLIC_ENABLE_VISION_DEBUG=false`.
+- `npm test` passes.
+- `npm run lint` passes.
+- `npx tsc --noEmit` passes.
+- `npm run build` passes.
+- Production smoke test verifies upload, analysis, failed-photo retry, report generation, and PDF export with beta-safe real photos.
