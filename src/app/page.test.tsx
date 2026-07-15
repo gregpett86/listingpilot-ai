@@ -276,7 +276,7 @@ describe("ListingPilot page", () => {
       "sm:grid-cols-2",
     );
     expect(screen.getByTestId("photo-review-grid").className).toContain(
-      "lg:grid-cols-1",
+      "2xl:grid-cols-3",
     );
     expect(screen.getByText("Photo 1")).toBeInTheDocument();
     expect(screen.getByText("Photo 20")).toBeInTheDocument();
@@ -322,9 +322,32 @@ describe("ListingPilot page", () => {
     expect(screen.getByText("Average")).toBeInTheDocument();
     expect(screen.queryByTestId("analysis-progress-overlay")).not.toBeInTheDocument();
     expect(screen.getByText("Photo analysis complete")).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Hallway" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Stairs" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Basement" })).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Generate Report" }),
     ).toBeEnabled();
+  });
+
+  it("uses non-cropping thumbnails in compact review cards", async () => {
+    const { container } = render(<Home />);
+
+    await userEvent.upload(uploadInput(container), [
+      pngFile("portrait.png"),
+      pngFile("landscape.png"),
+    ]);
+
+    const firstPhoto = await screen.findByAltText("Photo 1");
+    const secondPhoto = await screen.findByAltText("Photo 2");
+
+    expect(firstPhoto.className).toContain("object-contain");
+    expect(secondPhoto.className).toContain("object-contain");
+    expect(firstPhoto.className).not.toContain("object-cover");
+    expect(screen.queryByText("portrait.png")).not.toBeInTheDocument();
+    expect(screen.queryByText("landscape.png")).not.toBeInTheDocument();
+    expect(screen.queryByText("Visible Findings")).not.toBeInTheDocument();
+    expect(screen.queryByText("Readiness Contribution")).not.toBeInTheDocument();
   });
 
   it("adds later photos with a second request for only the new photo", async () => {

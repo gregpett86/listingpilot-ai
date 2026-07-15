@@ -158,4 +158,24 @@ describe("recommendImprovements", () => {
       ),
     ).toBe(true);
   });
+
+  it("does not create automatic recommendations for Hallway or Stairs observations", () => {
+    const recommendations = recommendImprovements({
+      observations: [
+        {
+          roomType: "Hallway",
+          condition: "Dated",
+          observedIssues: ["narrow hallway corridor"],
+        },
+        {
+          roomType: "Stairs",
+          condition: "Needs Improvement",
+          observedIssues: ["stairway railing"],
+        },
+      ],
+      limit: 20,
+    });
+
+    expect(recommendations).toEqual([]);
+  });
 });

@@ -124,6 +124,8 @@ const roomSeeds: Record<RoomType, ImprovementSeed[]> = {
     seed("Exterior keypad replacement", "Replace damaged or yellowed garage keypads.", [100, 400], [300, 1200], "Low", 24, ["Small working details reinforce convenience."]),
     seed("Garage threshold repair", "Repair trip hazards or damaged thresholds.", [250, 1500], [700, 3000], "Medium", 50, ["A clean threshold improves safety and function."]),
   ],
+  Hallway: [],
+  Stairs: [],
   Basement: [
     seed("Moisture issue review", "Address visible moisture stains, odors, or damp areas.", [500, 6000], [2500, 15000], "High", 94, ["Moisture concerns can quickly derail buyer confidence."]),
     seed("Dehumidifier setup", "Add or service dehumidification where appropriate.", [250, 1200], [800, 3500], "Medium", 54, ["A dry basement feels more usable and lower risk."]),

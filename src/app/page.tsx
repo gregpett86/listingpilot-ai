@@ -117,7 +117,14 @@ const recommendedCoverageCategories = [
   "Bedroom",
   "Exterior",
 ] as const;
-const optionalCoverageCategories = ["Landscaping", "Garage", "Basement", "Pool"] as const;
+const optionalCoverageCategories = [
+  "Landscaping",
+  "Garage",
+  "Hallway",
+  "Stairs",
+  "Basement",
+  "Pool",
+] as const;
 const coverageCategories = [
   ...recommendedCoverageCategories,
   ...optionalCoverageCategories,
@@ -1603,7 +1610,7 @@ export default function Home() {
                   </div>
                 ) : (
                   <div
-                    className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-1"
+                    className="mt-5 grid gap-3 sm:grid-cols-2 2xl:grid-cols-3"
                     data-testid="photo-review-grid"
                   >
                     {photos.map((photo) => {
@@ -1627,11 +1634,11 @@ export default function Home() {
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
                             alt={photo.displayLabel}
-                            className="h-full w-full object-cover"
+                            className="h-full w-full object-contain"
                             src={photo.url}
                           />
                         </div>
-                        <div className="space-y-3 p-3.5">
+                        <div className="space-y-2.5 p-3">
                           <div className="flex min-w-0 items-start justify-between gap-2">
                             <div className="min-w-0">
                               <p className="truncate text-sm font-bold text-[#111827]">
@@ -1658,7 +1665,7 @@ export default function Home() {
                                     : "Analyzing..."}
                             </span>
                           </div>
-                          <dl className="grid gap-2 text-xs">
+                          <dl className="grid gap-1.5 text-xs">
                             <div>
                               <dt className="label-caps">AI Room</dt>
                               <dd className="mt-1 font-bold text-[#111827]">

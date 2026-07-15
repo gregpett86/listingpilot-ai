@@ -198,6 +198,74 @@ describe("POST /api/analyze-photos", () => {
     ]);
   });
 
+  it("parses Hallway, Stairs, and Basement room classifications", async () => {
+    global.fetch = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          output_text: JSON.stringify({
+            findings: [
+              {
+                photoId: "hallway-photo",
+                suggestedCategory: "Hallway",
+                condition: "Good",
+                confidence: "High",
+                visibleFindings: ["entry hall corridor"],
+                explicitlySupportedRecommendations: [],
+                evidenceForEachRecommendation: [],
+              },
+              {
+                photoId: "stairs-photo",
+                suggestedCategory: "Stairs",
+                condition: "Average",
+                confidence: "Medium",
+                visibleFindings: ["stairway railing"],
+                explicitlySupportedRecommendations: [],
+                evidenceForEachRecommendation: [],
+              },
+              {
+                photoId: "basement-photo",
+                suggestedCategory: "Basement",
+                condition: "Dated",
+                confidence: "High",
+                visibleFindings: ["finished basement lower level"],
+                explicitlySupportedRecommendations: [],
+                evidenceForEachRecommendation: [],
+              },
+            ],
+          }),
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const response = await POST(
+      request({
+        photos: [
+          photo({ id: "hallway-photo", assignedCategory: undefined }),
+          photo({ id: "stairs-photo", assignedCategory: undefined }),
+          photo({ id: "basement-photo", assignedCategory: undefined }),
+        ],
+      }),
+    );
+    const body = await json(response);
+
+    expect(response.status).toBe(200);
+    expect(body.findings).toMatchObject([
+      {
+        assignedCategory: "Hallway",
+        suggestedCategory: "Hallway",
+      },
+      {
+        assignedCategory: "Stairs",
+        suggestedCategory: "Stairs",
+      },
+      {
+        assignedCategory: "Basement",
+        suggestedCategory: "Basement",
+      },
+    ]);
+  });
+
   it("maps malformed OpenAI output to safe provider_response_invalid errors", async () => {
     global.fetch = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ output_text: "not-json" }), {

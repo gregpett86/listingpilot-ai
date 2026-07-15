@@ -66,6 +66,57 @@ describe("listing-analysis helpers", () => {
     });
   });
 
+  it("groups multiple Hallway and Stairs photos by category", () => {
+    const observations = buildRoomObservations([
+      {
+        photoId: "hallway-1",
+        assignedCategory: "Hallway",
+        suggestedCategory: "Hallway",
+        categoryMismatch: false,
+        condition: "Average",
+        confidence: "High",
+        visibleFindings: ["entry hall wall scuffs"],
+        explicitlySupportedRecommendations: [],
+        evidenceForEachRecommendation: [],
+      },
+      {
+        photoId: "hallway-2",
+        assignedCategory: "Hallway",
+        suggestedCategory: "Hallway",
+        categoryMismatch: false,
+        condition: "Good",
+        confidence: "High",
+        visibleFindings: ["corridor lighting"],
+        explicitlySupportedRecommendations: [],
+        evidenceForEachRecommendation: [],
+      },
+      {
+        photoId: "stairs-1",
+        assignedCategory: "Stairs",
+        suggestedCategory: "Stairs",
+        categoryMismatch: false,
+        condition: "Good",
+        confidence: "High",
+        visibleFindings: ["stairway railing"],
+        explicitlySupportedRecommendations: [],
+        evidenceForEachRecommendation: [],
+      },
+    ]);
+
+    expect(observations).toEqual([
+      expect.objectContaining({
+        roomType: "Hallway",
+        condition: "Average",
+        photoCount: 2,
+      }),
+      expect.objectContaining({
+        roomType: "Stairs",
+        condition: "Good",
+        photoCount: 1,
+      }),
+    ]);
+  });
+
   it("prevents duplicate same-room photos from multiplying recommendations", () => {
     const observations = buildRoomObservations(kitchenFindings);
     const recommendations = recommendImprovements({

@@ -6,6 +6,8 @@ export const ROOM_TYPES = [
   "Exterior",
   "Landscaping",
   "Garage",
+  "Hallway",
+  "Stairs",
   "Basement",
   "Pool",
 ] as const;
