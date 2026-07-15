@@ -37,19 +37,184 @@ function issueMatchBoost(
   improvement: ImprovementRecord,
   observedIssues: string[] = [],
 ) {
-  const searchable = [
+  return hasIssueTextMatch(improvement, observedIssues)
+    ? 8
+    : 0;
+}
+
+function searchableImprovementText(improvement: ImprovementRecord) {
+  return [
     improvement.improvementName,
     improvement.description,
     ...improvement.sellerTalkingPoints,
   ]
     .join(" ")
     .toLowerCase();
+}
 
-  return observedIssues.some((issue) =>
-    searchable.includes(issue.toLowerCase()),
-  )
-    ? 8
-    : 0;
+function hasIssueTextMatch(
+  improvement: ImprovementRecord,
+  observedIssues: string[] = [],
+) {
+  const searchable = searchableImprovementText(improvement);
+  const stopWords = new Set([
+    "area",
+    "clear",
+    "issue",
+    "photo",
+    "property",
+    "visible",
+    "with",
+  ]);
+
+  return observedIssues.some((issue) => {
+    const normalizedIssue = issue.trim().toLowerCase();
+    const issueTokens = normalizedIssue
+      .split(/[^a-z0-9]+/)
+      .filter((token) => token.length >= 4 && !stopWords.has(token));
+
+    return (
+      normalizedIssue.length > 0 &&
+      (searchable.includes(normalizedIssue) ||
+        issueTokens.some((token) => searchable.includes(token)))
+    );
+  });
+}
+
+function observedText(observedIssues: string[] = []) {
+  return observedIssues.join(" ").toLowerCase();
+}
+
+function containsAny(text: string, keywords: string[]) {
+  return keywords.some((keyword) => text.includes(keyword));
+}
+
+function isPhotoSupportedRecommendation({
+  improvement,
+  observation,
+}: {
+  improvement: ImprovementRecord;
+  observation: PropertyConditionObservation;
+}) {
+  const issues = observation.observedIssues ?? [];
+
+  if (issues.length === 0) {
+    return false;
+  }
+
+  const name = improvement.improvementName.toLowerCase();
+  const evidence = observedText(issues);
+
+  if (name.includes("odor")) {
+    return false;
+  }
+
+  if (name.includes("moisture") || name.includes("dehumidifier")) {
+    return containsAny(evidence, [
+      "stain",
+      "standing water",
+      "leak",
+      "damp",
+      "wet",
+      "mold",
+      "mildew",
+      "discoloration",
+      "moisture",
+    ]);
+  }
+
+  if (name.includes("floor")) {
+    return containsAny(evidence, [
+      "floor",
+      "flooring",
+      "carpet",
+      "tile",
+      "hardwood",
+      "stain",
+      "scratch",
+      "debris",
+      "damage",
+      "deteriorat",
+      "wear",
+      "worn",
+    ]);
+  }
+
+  if (name.includes("declutter") || name.includes("organize")) {
+    return containsAny(evidence, [
+      "clutter",
+      "crowded",
+      "storage",
+      "boxes",
+      "excess",
+      "mess",
+      "debris",
+    ]);
+  }
+
+  if (name.includes("paint")) {
+    return containsAny(evidence, [
+      "paint",
+      "wall",
+      "scuff",
+      "mark",
+      "damage",
+      "dated",
+      "chip",
+      "peel",
+      "worn",
+      "faded",
+    ]);
+  }
+
+  if (
+    improvement.category === "Pool" ||
+    name.includes("pool") ||
+    name.includes("water clarity")
+  ) {
+    return containsAny(evidence, [
+      "pool",
+      "water",
+      "cloudy",
+      "clarity",
+      "surface",
+      "coping",
+      "deck",
+      "tile",
+      "furniture",
+      "equipment",
+      "stain",
+      "crack",
+      "clutter",
+    ]);
+  }
+
+  if (
+    improvement.category === "Landscaping" ||
+    name.includes("landscap") ||
+    name.includes("mulch") ||
+    name.includes("shrub") ||
+    name.includes("lawn") ||
+    name.includes("weed") ||
+    name.includes("edging")
+  ) {
+    return containsAny(evidence, [
+      "overgrown",
+      "debris",
+      "dead",
+      "weed",
+      "edging",
+      "mulch",
+      "shrub",
+      "lawn",
+      "vegetation",
+      "plant",
+      "thin",
+      "dry patch",
+    ]);
+  }
+
+  return hasIssueTextMatch(improvement, issues);
 }
 
 function buildReasons({
@@ -91,7 +256,8 @@ export function recommendImprovements({
     const candidates = IMPROVEMENT_LIBRARY.filter(
       (improvement) =>
         improvement.category === observation.roomType &&
-        improvement.targetConditions.includes(observation.condition),
+        improvement.targetConditions.includes(observation.condition) &&
+        isPhotoSupportedRecommendation({ improvement, observation }),
     );
 
     return candidates.map((improvement) => {

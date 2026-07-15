@@ -3,24 +3,21 @@ import {
   CONFIDENCE_LEVELS,
   PROPERTY_CONDITIONS,
   ROOM_TYPES,
-  type ConfidenceLevel,
-  type PropertyCondition,
-  type RoomType,
 } from "@/lib/property-intelligence";
-
-type AnalyzePhotoInput = {
-  id: string;
-  name: string;
-  dataUrl: string;
-};
-
-type VisionFinding = {
-  photoId: string;
-  roomType: RoomType;
-  condition: PropertyCondition;
-  confidence: ConfidenceLevel;
-  opportunities: string[];
-};
+import {
+  PHOTO_UPLOAD_LIMITS,
+  type AnalyzePhotosResponse,
+  type AnalysisErrorCode,
+  type PhotoAnalysisFailure,
+  type PhotoAnalysisResult,
+  type ValidatedAnalyzePhotoInput,
+  type VisionFinding,
+  isSupportedCondition,
+  isSupportedConfidence,
+  isSupportedRoomType,
+  safeErrorMessage,
+  validateAnalyzePhotosBody,
+} from "@/lib/analysis-schema";
 
 type OpenAIContentPart = {
   type: string;
@@ -38,6 +35,17 @@ type VisionAnalysisJson = {
   findings?: Partial<VisionFinding>[];
 };
 
+type OpenAIErrorResponse = {
+  error?: {
+    code?: string;
+    type?: string;
+  };
+};
+
+const enableServerDebug =
+  process.env.NODE_ENV !== "production" &&
+  process.env.NEXT_PUBLIC_ENABLE_VISION_DEBUG === "true";
+
 const responseSchema = {
   type: "object",
   additionalProperties: false,
@@ -50,19 +58,37 @@ const responseSchema = {
         additionalProperties: false,
         required: [
           "photoId",
-          "roomType",
+          "suggestedCategory",
           "condition",
           "confidence",
-          "opportunities",
+          "visibleFindings",
+          "explicitlySupportedRecommendations",
+          "evidenceForEachRecommendation",
         ],
         properties: {
           photoId: { type: "string" },
-          roomType: { enum: ROOM_TYPES },
+          suggestedCategory: { enum: ROOM_TYPES },
           condition: { enum: PROPERTY_CONDITIONS },
           confidence: { enum: CONFIDENCE_LEVELS },
-          opportunities: {
+          visibleFindings: {
             type: "array",
             items: { type: "string" },
+          },
+          explicitlySupportedRecommendations: {
+            type: "array",
+            items: { type: "string" },
+          },
+          evidenceForEachRecommendation: {
+            type: "array",
+            items: {
+              type: "object",
+              additionalProperties: false,
+              required: ["recommendation", "evidence"],
+              properties: {
+                recommendation: { type: "string" },
+                evidence: { type: "string" },
+              },
+            },
           },
         },
       },
@@ -70,16 +96,41 @@ const responseSchema = {
   },
 };
 
-function isSupportedRoomType(value: string): value is RoomType {
-  return ROOM_TYPES.includes(value as RoomType);
+function logDebug(message: string, data?: unknown) {
+  if (enableServerDebug) {
+    console.log("[ListingPilot Vision]", message, data ?? "");
+  }
 }
 
-function isSupportedCondition(value: string): value is PropertyCondition {
-  return PROPERTY_CONDITIONS.includes(value as PropertyCondition);
+function jsonResponse(
+  body: AnalyzePhotosResponse,
+  init?: ResponseInit,
+) {
+  return NextResponse.json(body, init);
 }
 
-function isSupportedConfidence(value: string): value is ConfidenceLevel {
-  return CONFIDENCE_LEVELS.includes(value as ConfidenceLevel);
+function buildErrorResponse({
+  code,
+  failedPhotos = [],
+  requestedPhotoCount = 0,
+  status,
+}: {
+  code: AnalysisErrorCode;
+  failedPhotos?: PhotoAnalysisFailure[];
+  requestedPhotoCount?: number;
+  status: number;
+}) {
+  return jsonResponse(
+    {
+      findings: [],
+      photoResults: failedPhotos,
+      failedPhotos,
+      requestedPhotoCount,
+      error: safeErrorMessage(code),
+      errorType: code,
+    },
+    { status },
+  );
 }
 
 function extractOutputText(response: OpenAIResponse) {
@@ -98,102 +149,204 @@ function extractOutputText(response: OpenAIResponse) {
 
 function normalizeFinding(
   finding: Partial<VisionFinding>,
-  fallbackPhotoId: string,
-): VisionFinding {
+  photo: ValidatedAnalyzePhotoInput,
+): VisionFinding | null {
+  if (typeof finding.photoId !== "string") {
+    return null;
+  }
+
+  if (
+    typeof finding.suggestedCategory !== "string" ||
+    !isSupportedRoomType(finding.suggestedCategory)
+  ) {
+    return null;
+  }
+
+  if (
+    typeof finding.condition !== "string" ||
+    !isSupportedCondition(finding.condition)
+  ) {
+    return null;
+  }
+
+  if (
+    typeof finding.confidence !== "string" ||
+    !isSupportedConfidence(finding.confidence)
+  ) {
+    return null;
+  }
+
   return {
-    photoId:
-      typeof finding.photoId === "string" ? finding.photoId : fallbackPhotoId,
-    roomType:
-      typeof finding.roomType === "string" && isSupportedRoomType(finding.roomType)
-        ? finding.roomType
-        : "Living Room",
-    condition:
-      typeof finding.condition === "string" &&
-      isSupportedCondition(finding.condition)
-        ? finding.condition
-        : "Average",
-    confidence:
-      typeof finding.confidence === "string" &&
-      isSupportedConfidence(finding.confidence)
-        ? finding.confidence
-        : "Medium",
-    opportunities: Array.isArray(finding.opportunities)
-      ? finding.opportunities
+    photoId: finding.photoId,
+    assignedCategory: photo.assignedCategory ?? finding.suggestedCategory,
+    suggestedCategory: finding.suggestedCategory,
+    categoryMismatch:
+      photo.assignedCategory != null &&
+      finding.suggestedCategory !== photo.assignedCategory,
+    condition: finding.condition,
+    confidence: finding.confidence,
+    visibleFindings: Array.isArray(finding.visibleFindings)
+      ? finding.visibleFindings
           .filter(
-            (opportunity): opportunity is string =>
-              typeof opportunity === "string",
+            (visibleFinding): visibleFinding is string =>
+              typeof visibleFinding === "string",
           )
-          .slice(0, 6)
+          .slice(0, PHOTO_UPLOAD_LIMITS.maxOpportunities)
+      : [],
+    explicitlySupportedRecommendations: Array.isArray(
+      finding.explicitlySupportedRecommendations,
+    )
+      ? finding.explicitlySupportedRecommendations
+          .filter(
+            (recommendation): recommendation is string =>
+              typeof recommendation === "string",
+          )
+          .slice(0, PHOTO_UPLOAD_LIMITS.maxOpportunities)
+      : [],
+    evidenceForEachRecommendation: Array.isArray(
+      finding.evidenceForEachRecommendation,
+    )
+      ? finding.evidenceForEachRecommendation
+          .filter(
+            (
+              evidence,
+            ): evidence is { recommendation: string; evidence: string } =>
+              Boolean(evidence) &&
+              typeof evidence === "object" &&
+              typeof evidence.recommendation === "string" &&
+              typeof evidence.evidence === "string",
+          )
+          .slice(0, PHOTO_UPLOAD_LIMITS.maxOpportunities)
       : [],
   };
 }
 
-export async function POST(request: Request) {
-  const apiKey = process.env.OPENAI_API_KEY;
+function buildFailure(
+  photo: Pick<ValidatedAnalyzePhotoInput, "id" | "name">,
+  errorType: AnalysisErrorCode,
+): PhotoAnalysisFailure {
+  return {
+    photoId: photo.id,
+    name: photo.name,
+    status: "failed",
+    errorType,
+    message: safeErrorMessage(errorType),
+  };
+}
 
-  if (!apiKey) {
-    console.error("[ListingPilot Vision] Missing OPENAI_API_KEY");
-
-    return NextResponse.json(
-      {
-        error: "OPENAI_API_KEY is not configured.",
-        errorType: "missing_api_key",
-      },
-      { status: 500 },
-    );
-  }
-
-  let body: { photos?: AnalyzePhotoInput[] };
+function providerErrorTypeFromResponse({
+  body,
+  status,
+}: {
+  body: string;
+  status: number;
+}): AnalysisErrorCode {
+  let parsed: OpenAIErrorResponse | null = null;
 
   try {
-    body = (await request.json()) as { photos?: AnalyzePhotoInput[] };
-  } catch (error) {
-    console.error("[ListingPilot Vision] Request JSON parsing failed", error);
-
-    return NextResponse.json(
-      {
-        error: "Vision request JSON could not be parsed.",
-        errorType: "image_processing_failure",
-      },
-      { status: 400 },
-    );
+    parsed = JSON.parse(body) as OpenAIErrorResponse;
+  } catch {
+    parsed = null;
   }
 
-  const photos = body.photos?.slice(0, 30) ?? [];
-  const model = process.env.OPENAI_VISION_MODEL ?? "gpt-4.1-mini";
+  const providerCode = parsed?.error?.code ?? parsed?.error?.type;
 
-  console.log("[ListingPilot Vision] Request received", {
-    model,
-    requestedPhotoCount: photos.length,
-    photoNames: photos.map((photo) => photo.name),
+  if (providerCode === "insufficient_quota") {
+    return "provider_quota_exceeded";
+  }
+
+  if (status === 429) {
+    return "provider_rate_limited";
+  }
+
+  return "provider_unavailable";
+}
+
+function buildPhotoResults({
+  failedPhotos,
+  findings,
+  photos,
+}: {
+  failedPhotos: PhotoAnalysisFailure[];
+  findings: VisionFinding[];
+  photos: ValidatedAnalyzePhotoInput[];
+}) {
+  const findingsByPhotoId = new Map(
+    findings.map((finding) => [finding.photoId, finding]),
+  );
+  const results: PhotoAnalysisResult[] = [...failedPhotos];
+  const missingFindings: PhotoAnalysisFailure[] = [];
+
+  photos.forEach((photo) => {
+    const finding = findingsByPhotoId.get(photo.id);
+
+    if (finding) {
+      results.push({
+        photoId: photo.id,
+        name: photo.name,
+        status: "success",
+        finding,
+      });
+      return;
+    }
+
+    const failure = buildFailure(photo, "no_analysis_result");
+    missingFindings.push(failure);
+    results.push(failure);
   });
 
-  if (photos.length === 0) {
-    return NextResponse.json({
-      findings: [],
-      rawVisionJson: { findings: [] },
-      model,
-      requestedPhotoCount: 0,
-    });
-  }
+  return {
+    results,
+    missingFindings,
+  };
+}
 
+async function callOpenAI({
+  apiKey,
+  model,
+  photos,
+}: {
+  apiKey: string;
+  model: string;
+  photos: ValidatedAnalyzePhotoInput[];
+}) {
   const content = [
     {
       type: "input_text",
       text: `Analyze each uploaded real estate photo for ListingPilot AI.
 
-Return one finding per image. Use only these roomType values: ${ROOM_TYPES.join(", ")}.
+Return one finding per image. Use only these suggestedCategory values: ${ROOM_TYPES.join(", ")}.
 Use only these condition values: ${PROPERTY_CONDITIONS.join(", ")}.
 Use only these confidence values: ${CONFIDENCE_LEVELS.join(", ")}.
 
-Visible opportunities should be concise phrases such as cabinet hardware, lighting, paint, decluttering, landscaping cleanup, curb appeal, flooring, caulk, staging, fixture update, pressure washing, or storage organization.
-If the image is unclear, use the closest room type, a conservative condition, and Low confidence.
-Each image is labeled with its photoId immediately before the image. Copy that exact photoId into the structured output.`,
+When assignedCategory is provided, it is the user's authoritative category for product scoring and recommendation mapping. suggestedCategory is only your visual classification suggestion.
+When assignedCategory is not provided, classify the room/category from the image and return that as suggestedCategory.
+Return a different suggestedCategory when the visible image clearly appears to be a different category, but do not force the assignedCategory into your suggestion.
+
+visibleFindings must be concise phrases grounded only in what is explicitly visible in the photo.
+explicitlySupportedRecommendations must be empty unless a recommendation is directly supported by a visibleFinding in that same photo.
+For every supported recommendation, evidenceForEachRecommendation must name the exact visible evidence.
+
+Do not infer odors, hidden moisture, age, value, ROI, code compliance, structural issues, system condition, urgency, or non-visible defects.
+Never recommend odor remediation from photo-only analysis.
+Moisture recommendations require visible staining, standing water, active leakage, mold-like discoloration, or similarly explicit visual evidence.
+Flooring cleanup requires visible wear, staining, debris, damage, or deterioration.
+Decluttering requires visible clutter. Paint refresh requires worn, marked, damaged, or strongly dated paint.
+Landscaping cleanup requires overgrowth, debris, dead vegetation, edging issues, weeds, or similarly visible issues.
+
+If the image is unclear, use the closest suggestedCategory, a conservative condition, Low confidence, and no recommendations unless the visual evidence is explicit.
+Each image is labeled with its photoId and may include assignedCategory immediately before the image. Copy the exact photoId into the structured output.`,
     },
     ...photos.flatMap((photo) => [
       {
         type: "input_text",
-        text: `photoId: ${photo.id}\nfileName: ${photo.name}`,
+        text: [
+          `photoId: ${photo.id}`,
+          photo.assignedCategory
+            ? `assignedCategory: ${photo.assignedCategory}`
+            : "assignedCategory: not provided",
+          `fileName: ${photo.name}`,
+        ].join("\n"),
       },
       {
         type: "input_image",
@@ -203,117 +356,199 @@ Each image is labeled with its photoId immediately before the image. Copy that e
     ]),
   ];
 
-  let response: Response;
+  return fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model,
+      input: [
+        {
+          role: "user",
+          content,
+        },
+      ],
+      text: {
+        format: {
+          type: "json_schema",
+          name: "listingpilot_photo_analysis",
+          schema: responseSchema,
+          strict: true,
+        },
+      },
+    }),
+  });
+}
+
+export async function POST(request: Request) {
+  const apiKey = process.env.OPENAI_API_KEY;
+  const model = process.env.OPENAI_VISION_MODEL ?? "gpt-4.1-mini";
+
+  if (!apiKey) {
+    logDebug("OPENAI_API_KEY is missing.");
+    return buildErrorResponse({
+      code: "missing_api_key",
+      status: 500,
+    });
+  }
+
+  let body: unknown;
 
   try {
-    console.log("[ListingPilot Vision] OpenAI request status", {
-      status: "started",
+    body = await request.json();
+  } catch (error) {
+    logDebug("Request JSON parse failed.", error);
+    return buildErrorResponse({
+      code: "malformed_request",
+      status: 400,
+    });
+  }
+
+  const {
+    failedPhotos: validationFailures,
+    requestIssues,
+    requestedPhotoCount,
+    validPhotos,
+  } = validateAnalyzePhotosBody(body);
+
+  if (requestIssues.length > 0) {
+    const primaryIssue = requestIssues[0];
+
+    logDebug("Request validation failed.", requestIssues);
+    return buildErrorResponse({
+      code: primaryIssue.code,
+      requestedPhotoCount,
+      status: 400,
+    });
+  }
+
+  if (validPhotos.length === 0) {
+    const failedPhotos =
+      validationFailures.length > 0
+        ? validationFailures
+        : [
+            {
+              photoId: "unknown",
+              name: "Uploaded photo",
+              status: "failed" as const,
+              errorType: "no_photos" as const,
+              message: safeErrorMessage("no_photos"),
+            },
+          ];
+
+    return buildErrorResponse({
+      code: failedPhotos[0].errorType,
+      failedPhotos,
+      requestedPhotoCount,
+      status: 400,
+    });
+  }
+
+  let providerResponse: Response;
+
+  try {
+    providerResponse = await callOpenAI({
+      apiKey,
       model,
-      photoCount: photos.length,
-    });
-
-    response = await fetch("https://api.openai.com/v1/responses", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model,
-        input: [
-          {
-            role: "user",
-            content,
-          },
-        ],
-        text: {
-          format: {
-            type: "json_schema",
-            name: "listingpilot_photo_analysis",
-            schema: responseSchema,
-            strict: true,
-          },
-        },
-      }),
-    });
-
-    console.log("[ListingPilot Vision] OpenAI response status", {
-      status: response.status,
-      ok: response.ok,
+      photos: validPhotos,
     });
   } catch (error) {
-    console.error("[ListingPilot Vision] OpenAI request failed", error);
-
-    return NextResponse.json(
-      {
-        error: "OpenAI Vision request failed before a response was returned.",
-        errorType: "api_request_failure",
-        detail: error instanceof Error ? error.message : String(error),
-      },
-      { status: 502 },
+    logDebug("OpenAI request failed before response.", error);
+    const failedPhotos = validPhotos.map((photo) =>
+      buildFailure(photo, "provider_unavailable"),
     );
+
+    return buildErrorResponse({
+      code: "provider_unavailable",
+      failedPhotos: [...validationFailures, ...failedPhotos],
+      requestedPhotoCount,
+      status: 502,
+    });
   }
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    const errorType =
-      response.status === 429 ? "rate_limit_issue" : "api_request_failure";
-
-    console.error("[ListingPilot Vision] OpenAI response failed", {
-      status: response.status,
-      errorType,
-      detail: errorText,
+  if (!providerResponse.ok) {
+    const providerDetail = await providerResponse.text().catch(() => "");
+    const errorType = providerErrorTypeFromResponse({
+      body: providerDetail,
+      status: providerResponse.status,
     });
 
-    return NextResponse.json(
-      { error: "OpenAI Vision analysis failed.", errorType, detail: errorText },
-      { status: response.status },
+    logDebug("OpenAI returned an error response.", {
+      status: providerResponse.status,
+      detail: providerDetail,
+    });
+
+    const failedPhotos = validPhotos.map((photo) =>
+      buildFailure(photo, errorType),
     );
+
+    return buildErrorResponse({
+      code: errorType,
+      failedPhotos: [...validationFailures, ...failedPhotos],
+      requestedPhotoCount,
+      status: providerResponse.status === 429 ? 429 : 502,
+    });
   }
 
-  const data = (await response.json()) as OpenAIResponse;
+  const data = (await providerResponse.json()) as OpenAIResponse;
   const outputText = extractOutputText(data);
   let parsed: VisionAnalysisJson;
 
   try {
     parsed = JSON.parse(outputText) as VisionAnalysisJson;
   } catch (error) {
-    console.error("[ListingPilot Vision] Structured JSON parsing failed", {
+    logDebug("OpenAI JSON could not be parsed.", {
       error,
       outputText,
     });
 
-    return NextResponse.json(
-      {
-        error: "OpenAI Vision JSON response could not be parsed.",
-        errorType: "json_parsing_failure",
-        rawOutputText: outputText,
-      },
-      { status: 502 },
+    const failedPhotos = validPhotos.map((photo) =>
+      buildFailure(photo, "provider_response_invalid"),
     );
+
+    return buildErrorResponse({
+      code: "provider_response_invalid",
+      failedPhotos: [...validationFailures, ...failedPhotos],
+      requestedPhotoCount,
+      status: 502,
+    });
   }
 
-  const findingsByPhotoId = new Map(
-    parsed.findings?.map((finding) => [finding.photoId, finding]) ?? [],
-  );
-  const findings = photos.map((photo) =>
-    normalizeFinding(
-      findingsByPhotoId.get(photo.id) ?? { photoId: photo.id },
-      photo.id,
-    ),
-  );
+  const validPhotosById = new Map(validPhotos.map((photo) => [photo.id, photo]));
+  const findings =
+    parsed.findings
+      ?.map((finding) => {
+        const photo =
+          typeof finding.photoId === "string"
+            ? validPhotosById.get(finding.photoId)
+            : undefined;
 
-  console.log("[ListingPilot Vision] Response parsed", {
-    returnedFindingCount: findings.length,
+        return photo ? normalizeFinding(finding, photo) : null;
+      })
+      .filter((finding): finding is VisionFinding =>
+        Boolean(finding),
+      ) ?? [];
+  const { missingFindings, results } = buildPhotoResults({
+    failedPhotos: validationFailures,
     findings,
+    photos: validPhotos,
   });
-  console.log("[ListingPilot Vision] Parsed JSON result", parsed);
+  const failedPhotos = [...validationFailures, ...missingFindings];
 
-  return NextResponse.json({
+  return jsonResponse({
     findings,
-    rawVisionJson: parsed,
-    rawOutputText: outputText,
+    photoResults: results,
+    failedPhotos,
     model,
-    requestedPhotoCount: photos.length,
+    requestedPhotoCount,
+    debug: enableServerDebug
+      ? {
+          returnedFindingCount: parsed.findings?.length ?? 0,
+          successfulFindingCount: findings.length,
+          failedPhotoCount: failedPhotos.length,
+        }
+      : undefined,
   });
 }

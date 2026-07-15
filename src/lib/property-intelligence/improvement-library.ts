@@ -124,6 +124,8 @@ const roomSeeds: Record<RoomType, ImprovementSeed[]> = {
     seed("Exterior keypad replacement", "Replace damaged or yellowed garage keypads.", [100, 400], [300, 1200], "Low", 24, ["Small working details reinforce convenience."]),
     seed("Garage threshold repair", "Repair trip hazards or damaged thresholds.", [250, 1500], [700, 3000], "Medium", 50, ["A clean threshold improves safety and function."]),
   ],
+  Hallway: [],
+  Stairs: [],
   Basement: [
     seed("Moisture issue review", "Address visible moisture stains, odors, or damp areas.", [500, 6000], [2500, 15000], "High", 94, ["Moisture concerns can quickly derail buyer confidence."]),
     seed("Dehumidifier setup", "Add or service dehumidification where appropriate.", [250, 1200], [800, 3500], "Medium", 54, ["A dry basement feels more usable and lower risk."]),
@@ -138,6 +140,13 @@ const roomSeeds: Record<RoomType, ImprovementSeed[]> = {
     seed("Odor remediation", "Address musty odors with cleaning, ventilation, or source repair.", [300, 3000], [1200, 7000], "High", 82, ["Odor is one of the fastest ways to create buyer hesitation."]),
     seed("Functional zone staging", "Define a gym, media, storage, or flex zone with simple staging.", [250, 1800], [900, 4500], "Low", 34, ["Defined zones help buyers understand basement potential."]),
     seed("Foundation crack review", "Review and repair visible foundation cracks or settlement indicators.", [500, 5000], [2000, 12000], "Medium", 88, ["Addressing visible foundation concerns can reduce buyer uncertainty."]),
+  ],
+  Pool: [
+    seed("Pool surface cleaning", "Clean visible pool surfaces, waterline tile, coping, and nearby hardscape before photos.", [250, 1500], [1000, 5000], "High", 76, ["A clean pool area makes outdoor living feel easier for buyers to trust."]),
+    seed("Water clarity service", "Balance water chemistry and improve visible water clarity before listing photography.", [150, 900], [800, 3500], "High", 72, ["Clear water helps the pool read as an asset instead of a maintenance concern."]),
+    seed("Pool deck touch-up", "Repair obvious staining, cracks, or trip hazards around the pool deck.", [500, 4500], [2000, 10000], "Medium", 82, ["A cleaner pool deck supports the outdoor entertaining story."]),
+    seed("Pool furniture staging", "Edit worn furniture and stage the pool area with simple seating or towels.", [150, 1200], [700, 3500], "Medium", 46, ["Light staging helps buyers picture the pool as usable living space."]),
+    seed("Equipment area organization", "Clear clutter around visible pumps, filters, and service access areas.", [0, 600], [500, 2500], "Medium", 48, ["An organized equipment area reduces perceived maintenance friction."]),
   ],
 };
 

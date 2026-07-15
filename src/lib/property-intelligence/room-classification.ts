@@ -8,7 +8,16 @@ const roomKeywords: Record<RoomType, string[]> = {
   Exterior: ["exterior", "front", "porch", "entry", "siding", "roof"],
   Landscaping: ["landscape", "yard", "lawn", "garden", "mulch", "patio"],
   Garage: ["garage", "driveway", "carport", "opener"],
-  Basement: ["basement", "cellar", "lower-level", "mechanical"],
+  Hallway: ["hallway", "corridor", "passage", "entry hall", "foyer hall"],
+  Stairs: ["stairs", "staircase", "stairway", "landing", "banister", "railing"],
+  Basement: [
+    "basement",
+    "lower level",
+    "cellar",
+    "finished basement",
+    "unfinished basement",
+  ],
+  Pool: ["pool", "spa", "swimming", "hot tub"],
 };
 
 export type RoomClassificationResult = {

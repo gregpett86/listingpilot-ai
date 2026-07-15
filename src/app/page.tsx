@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, DragEvent, useMemo, useState } from "react";
+import { ChangeEvent, DragEvent, useEffect, useMemo, useRef, useState } from "react";
 import { jsPDF } from "jspdf";
 import {
   RealtyEdgePageHeader,
@@ -15,27 +15,64 @@ import {
 import {
   ROOM_TYPES,
   calculatePropertyReadinessScore,
-  createConditionObservation,
   recommendImprovements,
   type ConfidenceLevel,
-  type CostRange,
   type ImprovementRecommendation,
-  type PropertyCondition,
   type PropertyConditionObservation,
   type PropertyReadinessScore,
   type RecommendationPriority,
   type RoomType,
 } from "@/lib/property-intelligence";
+import {
+  buildRealPhotoValidationRows,
+  buildRoomObservations,
+} from "@/lib/listing-analysis";
+import {
+  buildRoomSummariesForSynthesis,
+  fallbackWholePropertyAnalysis,
+  type RoomSummaryForSynthesis,
+  type WholePropertyAnalysis,
+  type WholePropertySynthesisResponse,
+} from "@/lib/whole-property-synthesis";
+import {
+  groupChecklistItems,
+  limitationsNote,
+  buildReadinessPresentation,
+  buildSellerChecklist,
+  buildSellerRoomSummaries,
+  type EffortLevel,
+  type SellerPreparationItem,
+  type SellerReadinessPresentation,
+  type SellerRoomSummary,
+} from "@/lib/seller-report";
+import {
+  PHOTO_UPLOAD_LIMITS,
+  SUPPORTED_IMAGE_MIME_TYPES,
+  type AnalysisValidationIssue,
+  type AnalyzePhotosResponse,
+  type PhotoAnalysisFailure,
+  type VisionFinding,
+  formatBytes,
+  validateClientPhotoFiles,
+} from "@/lib/analysis-schema";
 
 type PhotoItem = {
   id: string;
   name: string;
+  displayLabel: string;
   url: string;
   size: number;
-  area: RoomType;
+  area: RoomType | null;
+  categoryStatus:
+    | "pending_analysis"
+    | "analyzing"
+    | "ai_suggested"
+    | "agent_corrected"
+    | "analysis_failed";
   classificationConfidence: number;
   matchedKeywords: string[];
   file: File;
+  analysisFailure?: PhotoAnalysisFailure;
 };
 
 type AreaFinding = {
@@ -47,23 +84,25 @@ type AreaFinding = {
 };
 
 type ImprovementPlan = {
+  id: string;
   area: RoomType;
   priority: RecommendationPriority;
   recommendation: string;
-  estimatedCost: string;
-  potentialAddedValue: string;
+  effortLevel: EffortLevel;
+  estimatedTime: string;
+  reason: string;
 };
 
 type OptimizationReport = {
   readinessScore: PropertyReadinessScore;
+  readinessPresentation: SellerReadinessPresentation;
   confidenceLevel: ConfidenceLevel;
-  recommendedInvestmentRange: string;
-  potentialAddedSaleValueRange: string;
-  topOpportunities: ImprovementRecommendation[];
+  wholePropertyAnalysis: WholePropertyAnalysis;
   propertySummary: string;
-  marketValue: string;
   findings: AreaFinding[];
   improvements: ImprovementPlan[];
+  roomSummaries: SellerRoomSummary[];
+  sellerChecklist: SellerPreparationItem[];
   asIsSummary: string;
   improveSummary: string;
   marketingStrategy: string[];
@@ -81,6 +120,8 @@ const recommendedCoverageCategories = [
 const optionalCoverageCategories = [
   "Landscaping",
   "Garage",
+  "Hallway",
+  "Stairs",
   "Basement",
   "Pool",
 ] as const;
@@ -93,43 +134,19 @@ type CoverageCategory = (typeof coverageCategories)[number];
 type CoverageStatus = "Complete" | "Partial" | "Missing";
 type CoverageScore = "Excellent" | "Good" | "Limited";
 
-type VisionFinding = {
-  photoId: string;
-  roomType: RoomType;
-  condition: PropertyCondition;
-  confidence: ConfidenceLevel;
-  opportunities: string[];
-};
+type VisionAnalysisResponse = AnalyzePhotosResponse;
 
-type VisionAnalysisResponse = {
-  findings: VisionFinding[];
-  rawVisionJson?: unknown;
-  rawOutputText?: string;
-  model?: string;
-  requestedPhotoCount?: number;
-  error?: string;
-  errorType?:
-    | "missing_api_key"
-    | "api_request_failure"
-    | "image_processing_failure"
-    | "json_parsing_failure"
-    | "rate_limit_issue";
-  detail?: string;
-};
-
-const conditionSeverity: Record<PropertyCondition, number> = {
-  Excellent: 1,
-  Good: 2,
-  Average: 3,
-  Dated: 4,
-  "Needs Improvement": 5,
-};
+const SYNTHESIS_TIMEOUT_MS = 12000;
 
 const confidenceScores: Record<ConfidenceLevel, number> = {
   High: 0.85,
   Medium: 0.6,
   Low: 0.3,
 };
+
+const enableVisionDebug =
+  process.env.NODE_ENV !== "production" &&
+  process.env.NEXT_PUBLIC_ENABLE_VISION_DEBUG === "true";
 
 function isRoomCoverageCategory(
   category: CoverageCategory,
@@ -138,20 +155,6 @@ function isRoomCoverageCategory(
 }
 
 function countCoveragePhotos(photos: PhotoItem[], category: CoverageCategory) {
-  if (category === "Pool") {
-    return photos.filter((photo) => {
-      const searchable = [photo.name, ...photo.matchedKeywords]
-        .join(" ")
-        .toLowerCase();
-
-      return (
-        searchable.includes("pool") ||
-        searchable.includes("spa") ||
-        searchable.includes("swimming")
-      );
-    }).length;
-  }
-
   return isRoomCoverageCategory(category)
     ? photos.filter((photo) => photo.area === category).length
     : 0;
@@ -177,27 +180,6 @@ function calculateCoverageScore({
   return "Limited";
 }
 
-function formatBytes(bytes: number) {
-  const megabytes = bytes / 1024 / 1024;
-  return `${megabytes.toFixed(megabytes >= 10 ? 0 : 1)} MB`;
-}
-
-function formatCurrencyRange(range: CostRange) {
-  return `$${range.min.toLocaleString()} - $${range.max.toLocaleString()}`;
-}
-
-function summarizeCurrencyRanges(ranges: CostRange[]) {
-  const totals = ranges.reduce(
-    (sum, range) => ({
-      min: sum.min + range.min,
-      max: sum.max + range.max,
-    }),
-    { min: 0, max: 0 },
-  );
-
-  return formatCurrencyRange(totals);
-}
-
 function fileToDataUrl(file: File) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -212,16 +194,6 @@ function fileToDataUrl(file: File) {
   });
 }
 
-function strongestCondition(findings: VisionFinding[]): PropertyCondition {
-  return findings.reduce<PropertyCondition>(
-    (selectedCondition, finding) =>
-      conditionSeverity[finding.condition] > conditionSeverity[selectedCondition]
-        ? finding.condition
-        : selectedCondition,
-    "Excellent",
-  );
-}
-
 function confidenceFromVisionFindings(findings: VisionFinding[]) {
   const averageConfidence =
     findings.reduce(
@@ -232,42 +204,6 @@ function confidenceFromVisionFindings(findings: VisionFinding[]) {
   if (findings.length >= 20 && averageConfidence >= 0.7) return "High";
   if (findings.length >= 10 || averageConfidence >= 0.55) return "Medium";
   return "Low";
-}
-
-function buildObservations(
-  photos: PhotoItem[],
-  visionFindings: VisionFinding[],
-): PropertyConditionObservation[] {
-  return propertyAreas.flatMap((area) => {
-    const areaFindings = visionFindings.filter(
-      (finding) => finding.roomType === area,
-    );
-
-    if (areaFindings.length === 0) {
-      return [];
-    }
-
-    const observedIssues = Array.from(
-      new Set(areaFindings.flatMap((finding) => finding.opportunities)),
-    );
-    const condition = strongestCondition(areaFindings);
-
-    return [
-      createConditionObservation({
-        roomType: area,
-        condition,
-        photoCount: areaFindings.length,
-        observedIssues,
-        notes: `${areaFindings.length} uploaded photo${
-          areaFindings.length === 1 ? "" : "s"
-        } analyzed with OpenAI Vision. ${
-          observedIssues.length
-            ? `Visible opportunities: ${observedIssues.join(", ")}.`
-            : "No specific visible opportunities were returned."
-        }`,
-      }),
-    ];
-  });
 }
 
 function buildFindings({
@@ -296,12 +232,12 @@ function buildFindings({
           (recommendation) =>
             recommendation.improvement.improvementName,
         ),
-      sellerTalkingPoints:
-        roomRecommendations[0]?.sellerTalkingPoints.slice(0, 2) ??
-        [
-          `${observation.roomType} should be reviewed with the seller before photography.`,
-          "The recommendation plan should stay focused on visible buyer confidence signals.",
-        ],
+      sellerTalkingPoints: [
+        `${observation.roomType} is summarized from visible presentation in the uploaded photos.`,
+        roomRecommendations[0]
+          ? `${roomRecommendations[0].improvement.improvementName} is the top visible preparation item for this room.`
+          : "No major preparation item was selected for this room.",
+      ],
     };
   });
 }
@@ -309,74 +245,63 @@ function buildFindings({
 function buildReport({
   confidenceLevel,
   findings,
-  photos,
   readinessScore,
   recommendations,
+  roomSummaries,
+  wholePropertyAnalysis,
 }: {
   confidenceLevel: ConfidenceLevel;
   findings: AreaFinding[];
-  photos: PhotoItem[];
   readinessScore: PropertyReadinessScore;
   recommendations: ImprovementRecommendation[];
+  roomSummaries: RoomSummaryForSynthesis[];
+  wholePropertyAnalysis: WholePropertyAnalysis;
 }): OptimizationReport {
-  const strongestAreas = findings
-    .filter((finding) => finding.confidence !== "Low")
-    .map((finding) => finding.area);
-  const topOpportunities = recommendations.slice(0, 3);
-  const recommendedInvestmentRange = summarizeCurrencyRanges(
-    topOpportunities.map(
-      (recommendation) => recommendation.improvement.typicalCostRange,
-    ),
-  );
-  const potentialAddedSaleValueRange = summarizeCurrencyRanges(
-    topOpportunities.map(
-      (recommendation) =>
-        recommendation.improvement.potentialAddedSaleValueRange,
-    ),
-  );
-
-  const improvements: ImprovementPlan[] = recommendations
-    .slice(0, 8)
-    .map((recommendation) => ({
-      area: recommendation.improvement.category,
-      priority: recommendation.priority,
-      recommendation: recommendation.improvement.improvementName,
-      estimatedCost: formatCurrencyRange(
-        recommendation.improvement.typicalCostRange,
-      ),
-      potentialAddedValue: formatCurrencyRange(
-        recommendation.improvement.potentialAddedSaleValueRange,
-      ),
-    }));
+  const sellerChecklist = buildSellerChecklist({
+    recommendations,
+    synthesis: wholePropertyAnalysis,
+  });
+  const improvements: ImprovementPlan[] = sellerChecklist.map((item) => ({
+    id: item.id,
+    area: item.room,
+    priority: item.priority,
+    recommendation: item.task,
+    effortLevel: item.effortLevel,
+    estimatedTime: item.estimatedTime,
+    reason: item.reason,
+  }));
+  const readinessPresentation = buildReadinessPresentation({
+    confidence: confidenceLevel,
+    readinessScore,
+    synthesis: wholePropertyAnalysis,
+  });
 
   return {
     readinessScore,
+    readinessPresentation,
     confidenceLevel,
-    recommendedInvestmentRange,
-    potentialAddedSaleValueRange,
-    topOpportunities,
-    propertySummary: `Analysis based on ${photos.length} uploaded photos across ${findings.length} property areas. Readiness status: ${readinessScore.status} (${readinessScore.score}/100) with ${confidenceLevel.toLowerCase()} confidence. ${
-      strongestAreas.length
-        ? `The strongest coverage is in ${strongestAreas.join(", ")}.`
-        : "Additional photos would improve confidence before a final seller presentation."
-    }`,
-    marketValue:
-      "Current Market Value: Placeholder pending CMA, recent comparable sales, and agent pricing strategy.",
+    wholePropertyAnalysis,
+    propertySummary: wholePropertyAnalysis.executiveSummary,
     findings,
     improvements,
-    asIsSummary:
-      "Selling as-is may reduce prep time and upfront spend, but visible cosmetic friction can weaken online conversion and give buyers more negotiation room.",
-    improveSummary:
-      "Completing targeted, photo-visible improvements can strengthen launch presentation, support pricing confidence, and create cleaner seller talking points.",
-    marketingStrategy: [
-      "Lead with the home's strongest lifestyle spaces in listing photos and social previews.",
-      "Use improvement notes to frame seller preparation as strategic, not cosmetic overreach.",
-      "Highlight fresh exterior, clean kitchen surfaces, and bright shared spaces in remarks.",
-      "Position completed work as buyer confidence signals during showings and follow-up.",
-    ],
+    roomSummaries: buildSellerRoomSummaries({
+      preparationItems: sellerChecklist,
+      roomSummaries,
+    }),
+    sellerChecklist,
+    asIsSummary: wholePropertyAnalysis.buyerAppeal,
+    improveSummary: wholePropertyAnalysis.listingReadinessNarrative,
+    marketingStrategy:
+      wholePropertyAnalysis.marketingHighlights.length > 0
+        ? wholePropertyAnalysis.marketingHighlights
+        : [
+            "Lead with the home's strongest lifestyle spaces in listing photos and social previews.",
+            "Use improvement notes to frame seller preparation as strategic, not cosmetic overreach.",
+            "Highlight fresh exterior, clean kitchen surfaces, and bright shared spaces in remarks.",
+            "Position completed work as buyer confidence signals during showings and follow-up.",
+          ],
     nextSteps: [
       "Collect any missing room or exterior photos before finalizing recommendations.",
-      "Review cost ranges with preferred vendors for local pricing accuracy.",
       "Choose which high-priority improvements the seller can complete before photography.",
       "Pair the final report with CMA pricing guidance and launch timeline.",
     ],
@@ -405,7 +330,10 @@ function ensurePdfSpace(doc: jsPDF, y: number, neededSpace = 28) {
   return 20;
 }
 
-function exportReportPdf(report: OptimizationReport) {
+function exportReportPdf(
+  report: OptimizationReport,
+  excludedItemIds = new Set<string>(),
+) {
   const doc = new jsPDF({ unit: "mm", format: "letter" });
   const margin = 18;
   const contentWidth = 180;
@@ -450,6 +378,23 @@ function exportReportPdf(report: OptimizationReport) {
     y += 2;
   };
 
+  const addPageNumbers = () => {
+    const pageCount = doc.getNumberOfPages();
+
+    for (let page = 1; page <= pageCount; page += 1) {
+      doc.setPage(page);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+      doc.setTextColor(148, 163, 184);
+      doc.text(`Page ${page} of ${pageCount}`, 178, 270);
+    }
+  };
+
+  const includedChecklist = report.sellerChecklist.filter(
+    (item) => !excludedItemIds.has(item.id),
+  );
+  const checklistGroups = groupChecklistItems(includedChecklist);
+
   doc.setFillColor(...navy);
   doc.rect(0, 0, 216, 18, "F");
   doc.setFillColor(...gold);
@@ -471,68 +416,86 @@ function exportReportPdf(report: OptimizationReport) {
   doc.line(margin, y, margin + contentWidth, y);
   y += 10;
 
-  addSectionTitle("Property Summary");
+  addSectionTitle("A. Property Overview");
+  addParagraph(
+    "Home Sale Readiness Report prepared from the uploaded ListingPilot AI photo analysis.",
+  );
+
+  addSectionTitle("B. Executive Summary");
   addParagraph(report.propertySummary);
 
-  addSectionTitle("Property Readiness");
+  addSectionTitle("C. Listing Readiness");
   addParagraph(
-    `${report.readinessScore.status}: ${report.readinessScore.summary}`,
+    `${report.readinessPresentation.score}/100 - ${report.readinessPresentation.label} | Confidence: ${report.readinessPresentation.confidence}`,
   );
-  addParagraph(
-    `Readiness Score: ${report.readinessScore.score}/100 | Confidence Level: ${report.confidenceLevel} | Recommended Investment Range: ${report.recommendedInvestmentRange} | Potential Added Sale Value Range: ${report.potentialAddedSaleValueRange}`,
-  );
-  addBulletList(
-    report.topOpportunities.map(
-      (recommendation) =>
-        `${recommendation.improvement.category}: ${recommendation.improvement.improvementName}`,
-    ),
-  );
+  addParagraph(report.readinessPresentation.narrative);
 
-  addSectionTitle("Current Market Value");
-  addParagraph(report.marketValue);
+  addSectionTitle("D. Top Selling Features");
+  addBulletList(report.wholePropertyAnalysis.topSellingFeatures);
 
-  addSectionTitle("AI Findings");
-  report.findings.forEach((finding) => {
-    y = ensurePdfSpace(doc, y, 30);
+  addSectionTitle("E. Highest-Impact Preparation Priorities");
+  addBulletList(report.wholePropertyAnalysis.topImprovementPriorities);
+
+  addSectionTitle("F. Room-by-Room Summary");
+  report.roomSummaries.forEach((summary) => {
+    y = ensurePdfSpace(doc, y, 38);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(11);
     doc.setTextColor(...navy);
-    doc.text(`${finding.area} (${finding.confidence} confidence)`, margin, y);
-    y += 6;
-    addParagraph(finding.condition);
-    addBulletList(finding.sellerTalkingPoints);
-  });
-
-  addSectionTitle("Recommended Improvements");
-  report.improvements.forEach((improvement) => {
-    y = ensurePdfSpace(doc, y, 24);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(11);
-    doc.setTextColor(...navy);
-    doc.text(`${improvement.area} - ${improvement.priority} Priority`, margin, y);
-    y += 6;
-    addParagraph(improvement.recommendation);
-    addParagraph(
-      `Estimated Cost Range: ${improvement.estimatedCost} | Potential Added Sale Value Range: ${improvement.potentialAddedValue}`,
+    doc.text(
+      `${summary.room} | ${summary.overallCondition} | ${summary.confidence} confidence`,
+      margin,
+      y,
     );
+    y += 6;
+    addParagraph(summary.shortSummary);
+    addBulletList([
+      `Strongest feature: ${summary.strongestSellingFeature}`,
+      `Top preparation item: ${summary.topPreparationRecommendation}`,
+    ]);
   });
 
-  addSectionTitle("Sell As-Is vs Improve Comparison");
-  addParagraph(`Sell As-Is: ${report.asIsSummary}`);
-  addParagraph(`Improve Before Launch: ${report.improveSummary}`);
+  addSectionTitle("G. Seller Preparation Checklist");
+  Object.entries(checklistGroups).forEach(([group, items]) => {
+    if (items.length === 0) return;
 
-  addSectionTitle("Marketing Strategy");
+    y = ensurePdfSpace(doc, y, 18);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.setTextColor(...navy);
+    doc.text(group, margin, y);
+    y += 6;
+
+    items.forEach((item) => {
+      y = ensurePdfSpace(doc, y, 22);
+      doc.setDrawColor(212, 160, 23);
+      doc.rect(margin, y - 3, 4, 4);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10);
+      doc.setTextColor(...navy);
+      doc.text(`${item.task} (${item.room})`, margin + 7, y);
+      y += 5;
+      addParagraph(
+        `${item.priority} priority | ${item.effortLevel} | Estimated time: ${item.estimatedTime}. ${item.reason}`,
+      );
+    });
+  });
+
+  addSectionTitle("H. Marketing Highlights");
   addBulletList(report.marketingStrategy);
 
-  addSectionTitle("Next Steps");
-  addBulletList(report.nextSteps);
+  addSectionTitle("I. Important Limitations / Agent Review Note");
+  addParagraph(limitationsNote);
 
+  addPageNumbers();
   doc.save("listingpilot-home-sale-optimization-report.pdf");
 }
 
 export default function Home() {
   const [photos, setPhotos] = useState<PhotoItem[]>([]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isGeneratingReport, setIsGeneratingReport] = useState(false);
+  const [analysisCompletionMessage, setAnalysisCompletionMessage] = useState("");
   const [findings, setFindings] = useState<AreaFinding[]>([]);
   const [recommendations, setRecommendations] = useState<
     ImprovementRecommendation[]
@@ -542,9 +505,50 @@ export default function Home() {
   const [analysisConfidence, setAnalysisConfidence] =
     useState<ConfidenceLevel>("Low");
   const [analysisError, setAnalysisError] = useState("");
+  const [uploadIssues, setUploadIssues] = useState<AnalysisValidationIssue[]>(
+    [],
+  );
   const [visionDebugResponse, setVisionDebugResponse] =
     useState<VisionAnalysisResponse | null>(null);
   const [report, setReport] = useState<OptimizationReport | null>(null);
+  const [excludedPreparationItemIds, setExcludedPreparationItemIds] = useState(
+    () => new Set<string>(),
+  );
+  const objectUrlsRef = useRef(new Set<string>());
+  const analysisQueueRef = useRef(new Set<string>());
+  const isAnalyzingRef = useRef(false);
+  const latestPhotosRef = useRef<PhotoItem[]>([]);
+  const latestFindingsRef = useRef<VisionFinding[]>([]);
+  const uploadSequenceRef = useRef(0);
+
+  useEffect(() => {
+    const objectUrls = objectUrlsRef.current;
+
+    return () => {
+      objectUrls.forEach((url) => URL.revokeObjectURL(url));
+      objectUrls.clear();
+    };
+  }, []);
+
+  useEffect(() => {
+    latestPhotosRef.current = photos;
+  }, [photos]);
+
+  useEffect(() => {
+    latestFindingsRef.current = visionDebugResponse?.findings ?? [];
+  }, [visionDebugResponse]);
+
+  useEffect(() => {
+    if (!analysisCompletionMessage) {
+      return undefined;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setAnalysisCompletionMessage("");
+    }, 4000);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [analysisCompletionMessage]);
 
   const photoCounts = useMemo(
     () =>
@@ -592,115 +596,109 @@ export default function Home() {
   const visionFindingsByPhotoId = useMemo(
     () =>
       new Map(
-        visionDebugResponse?.findings.map((finding) => [
+        visionDebugResponse?.findings?.map((finding) => [
           finding.photoId,
           finding,
         ]) ?? [],
       ),
     [visionDebugResponse],
   );
-  const visionValidationFlags = useMemo(() => {
-    if (!visionDebugResponse) {
-      return [];
-    }
+  const realPhotoValidationRows = useMemo(
+    () =>
+      buildRealPhotoValidationRows({
+        observations: buildRoomObservations(visionDebugResponse?.findings ?? []),
+        photos,
+        recommendations,
+        visionFindings: visionDebugResponse?.findings ?? [],
+      }),
+    [photos, recommendations, visionDebugResponse],
+  );
 
-    return photos.flatMap((photo) => {
-      const finding = visionFindingsByPhotoId.get(photo.id);
-
-      if (!finding) {
-        return [`${photo.name}: no Vision finding was returned.`];
-      }
-
-      const flags = [];
-
-      if (finding.confidence === "Low") {
-        flags.push(`${photo.name}: low-confidence classification.`);
-      }
-
-      if (finding.opportunities.length === 0) {
-        flags.push(`${photo.name}: no visible opportunities returned.`);
-      }
-
-      return flags;
-    });
-  }, [photos, visionDebugResponse, visionFindingsByPhotoId]);
-
-  function resetAnalysisState() {
+  function resetReportState() {
     setFindings([]);
     setRecommendations([]);
     setReadinessScore(null);
-    setAnalysisConfidence("Low");
-    setAnalysisError("");
-    setVisionDebugResponse(null);
     setReport(null);
   }
 
   function appendPhotoFiles(files: File[]) {
-    console.groupCollapsed("[ListingPilot upload] appendPhotoFiles");
-    console.log("incoming files", files.length, files.map((file) => file.name));
-    console.log("photos before append", photos.length);
+    const remainingSlots = PHOTO_UPLOAD_LIMITS.maxPhotos - photos.length;
 
-    const imageFiles = files.filter((file) => file.type.startsWith("image/"));
-    console.log(
-      "image files",
-      imageFiles.length,
-      imageFiles.map((file) => file.name),
+    if (remainingSlots <= 0) {
+      setUploadIssues([
+        {
+          code: "too_many_photos",
+          message:
+            "You have reached the 20-photo limit. Remove a photo before adding another.",
+        },
+      ]);
+      return;
+    }
+
+    const filesToValidate = files.slice(0, remainingSlots);
+    const skippedForLimit = files.length > remainingSlots;
+    const existingKeys = new Set(
+      photos.map((photo) => `${photo.name}:${photo.size}:${photo.file.type}`),
     );
-
-    if (imageFiles.length === 0) {
-      console.log("no image files found; upload queue unchanged");
-      console.groupEnd();
-      return;
-    }
-
-    if (photos.length >= 30) {
-      console.log("photo queue already at 30; upload queue unchanged");
-      console.groupEnd();
-      return;
-    }
-
-    setPhotos((currentPhotos) => {
-      const remainingSlots = Math.max(30 - currentPhotos.length, 0);
-      const uploadBatchId = Date.now();
-      const nextPhotos = imageFiles
-        .slice(0, remainingSlots)
-        .map((file, index) => ({
-          id: `${file.name}-${file.lastModified}-${index}`,
-          name: file.name,
-          url: URL.createObjectURL(file),
-          size: file.size,
-          area:
-            propertyAreas[
-              (currentPhotos.length + index) % propertyAreas.length
-            ],
-          classificationConfidence: 0.2,
-          matchedKeywords: [],
-          file,
-        }));
-      const appendedPhotos = nextPhotos.map((photo, index) => ({
-        ...photo,
-        id: `${photo.id}-${uploadBatchId}-${currentPhotos.length + index}`,
-      }));
-
-      console.log("current photos in updater", currentPhotos.length);
-      console.log("remaining slots", remainingSlots);
-      console.log("appending photos", appendedPhotos.length);
-      console.log("next queue size", currentPhotos.length + appendedPhotos.length);
-
-      return [...currentPhotos, ...appendedPhotos];
+    const currentTotalBytes = photos.reduce((sum, photo) => sum + photo.size, 0);
+    const { accepted, issues } = validateClientPhotoFiles({
+      currentPhotoCount: photos.length,
+      currentTotalBytes,
+      existingKeys,
+      files: filesToValidate,
     });
-    resetAnalysisState();
-    console.groupEnd();
+
+    setUploadIssues([
+      ...(skippedForLimit
+        ? [
+            {
+              code: "too_many_photos" as const,
+              message:
+                "You can upload up to 20 photos per report. We added the first available photos and skipped the rest.",
+            },
+          ]
+        : []),
+      ...issues.map((issue) => ({
+        ...issue,
+        photoName: undefined,
+      })),
+    ]);
+
+    if (accepted.length === 0) {
+      return;
+    }
+
+    uploadSequenceRef.current += 1;
+    const uploadBatchId = uploadSequenceRef.current;
+    const appendedPhotos = accepted.map((file, index) => {
+      const url = URL.createObjectURL(file);
+      objectUrlsRef.current.add(url);
+
+      return {
+        id: `${file.name}-${file.lastModified}-${index}-${uploadBatchId}-${photos.length + index}`,
+        name: file.name,
+        displayLabel: `Photo ${photos.length + index + 1}`,
+        url,
+        size: file.size,
+        area: null,
+        categoryStatus: "pending_analysis" as const,
+        classificationConfidence: 0.2,
+        matchedKeywords: [],
+        file,
+      };
+    });
+
+    setPhotos((currentPhotos) => [...currentPhotos, ...appendedPhotos]);
+    resetReportState();
+    appendedPhotos.forEach((photo) => analysisQueueRef.current.add(photo.id));
+    window.setTimeout(() => {
+      void processAnalysisQueue();
+    }, 0);
   }
 
   function handlePhotoUpload(event: ChangeEvent<HTMLInputElement>) {
     const selectedFiles = Array.from(event.target.files ?? []);
 
-    console.log(
-      "[ListingPilot upload] file input change",
-      selectedFiles.length,
-      selectedFiles.map((file) => file.name),
-    );
     appendPhotoFiles(selectedFiles);
     event.target.value = "";
   }
@@ -709,11 +707,6 @@ export default function Home() {
     event.preventDefault();
     const droppedFiles = Array.from(event.dataTransfer.files);
 
-    console.log(
-      "[ListingPilot upload] drop",
-      droppedFiles.length,
-      droppedFiles.map((file) => file.name),
-    );
     appendPhotoFiles(droppedFiles);
   }
 
@@ -724,6 +717,7 @@ export default function Home() {
           ? {
               ...photo,
               area,
+              categoryStatus: "agent_corrected",
               classificationConfidence: Math.max(
                 photo.classificationConfidence,
                 0.75,
@@ -737,32 +731,183 @@ export default function Home() {
     setReadinessScore(null);
     setAnalysisConfidence("Low");
     setAnalysisError("");
-    setVisionDebugResponse(null);
     setReport(null);
   }
 
-  async function analyzePhotos() {
+  function removePhoto(photoId: string) {
+    analysisQueueRef.current.delete(photoId);
+    setPhotos((currentPhotos) => {
+      const photoToRemove = currentPhotos.find((photo) => photo.id === photoId);
+
+      if (photoToRemove) {
+        URL.revokeObjectURL(photoToRemove.url);
+        objectUrlsRef.current.delete(photoToRemove.url);
+      }
+
+      return currentPhotos.filter((photo) => photo.id !== photoId);
+    });
+    setVisionDebugResponse((currentResponse) =>
+      currentResponse
+        ? {
+            ...currentResponse,
+            findings: currentResponse.findings.filter(
+              (finding) => finding.photoId !== photoId,
+            ),
+            failedPhotos: currentResponse.failedPhotos.filter(
+              (failure) => failure.photoId !== photoId,
+            ),
+          }
+        : currentResponse,
+    );
+    resetReportState();
+  }
+
+  async function processAnalysisQueue() {
+    if (isAnalyzingRef.current || analysisQueueRef.current.size === 0) {
+      return;
+    }
+
+    const queuedPhotoIds = Array.from(analysisQueueRef.current);
+    analysisQueueRef.current.clear();
+    await analyzePhotos(new Set(queuedPhotoIds));
+
+    if (analysisQueueRef.current.size > 0) {
+      void processAnalysisQueue();
+    }
+  }
+
+  async function validateReadableImage(file: File) {
+    if (typeof createImageBitmap !== "function") {
+      return true;
+    }
+
+    try {
+      const bitmap = await createImageBitmap(file);
+      bitmap.close();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function mergeFindings(
+    existingFindings: VisionFinding[],
+    nextFindings: VisionFinding[],
+    retriedPhotoIds: Set<string>,
+  ) {
+    const merged = new Map(
+      existingFindings
+        .filter((finding) => !retriedPhotoIds.has(finding.photoId))
+        .map((finding) => [finding.photoId, finding]),
+    );
+
+    nextFindings.forEach((finding) => {
+      merged.set(finding.photoId, finding);
+    });
+
+    return Array.from(merged.values());
+  }
+
+  async function analyzePhotos(targetPhotoIds?: Set<string>) {
+    if (isAnalyzingRef.current) {
+      if (targetPhotoIds) {
+        targetPhotoIds.forEach((photoId) =>
+          analysisQueueRef.current.add(photoId),
+        );
+      }
+      return;
+    }
+
+    const photosToAnalyze = targetPhotoIds
+      ? latestPhotosRef.current.filter((photo) => targetPhotoIds.has(photo.id))
+      : latestPhotosRef.current.filter(
+          (photo) =>
+            !latestFindingsRef.current.some(
+              (finding) => finding.photoId === photo.id,
+            ) || photo.analysisFailure,
+        );
+
+    if (photosToAnalyze.length === 0) {
+      setAnalysisError("No failed photos are available to retry.");
+      return;
+    }
+
+    const activePhotoIds = new Set(photosToAnalyze.map((photo) => photo.id));
+    isAnalyzingRef.current = true;
     setIsAnalyzing(true);
     setAnalysisError("");
-    setVisionDebugResponse(null);
+    setAnalysisCompletionMessage("");
+    setPhotos((currentPhotos) =>
+      currentPhotos.map((photo) =>
+        activePhotoIds.has(photo.id)
+          ? {
+              ...photo,
+              categoryStatus:
+                photo.categoryStatus === "agent_corrected"
+                  ? photo.categoryStatus
+                  : "analyzing",
+              analysisFailure: undefined,
+            }
+          : photo,
+      ),
+    );
     let visionLogOpen = false;
 
     try {
+      const unreadablePhotos: PhotoAnalysisFailure[] = [];
+      const readablePhotos: PhotoItem[] = [];
+
+      for (const photo of photosToAnalyze) {
+        if (await validateReadableImage(photo.file)) {
+          readablePhotos.push(photo);
+        } else {
+          unreadablePhotos.push({
+            photoId: photo.id,
+            name: photo.displayLabel,
+            status: "failed",
+            errorType: "image_decode_failed",
+            message: "Analysis unavailable",
+          });
+        }
+      }
+
+      if (readablePhotos.length === 0) {
+        setPhotos((currentPhotos) =>
+          currentPhotos.map((photo) => ({
+            ...photo,
+            analysisFailure:
+              unreadablePhotos.find((failure) => failure.photoId === photo.id) ??
+              photo.analysisFailure,
+          })),
+        );
+        throw new Error("No readable photos were available for analysis.");
+      }
+
       const payloadPhotos = await Promise.all(
-        photos.map(async (photo) => ({
-          id: photo.id,
-          name: photo.name,
-          dataUrl: await fileToDataUrl(photo.file),
-        })),
+        readablePhotos.map(async (photo) => {
+          const dataUrl = await fileToDataUrl(photo.file);
+
+          return {
+            id: photo.id,
+            name: photo.name,
+            assignedCategory:
+              photo.categoryStatus === "agent_corrected" && photo.area
+                ? photo.area
+                : undefined,
+            fileMimeType: photo.file.type,
+            fileSize: photo.file.size,
+            dataUrl,
+          };
+        }),
       );
 
-      console.groupCollapsed("[ListingPilot Vision] analyzePhotos");
-      console.log("calling /api/analyze-photos", {
-        photoCount: payloadPhotos.length,
-        photoIds: payloadPhotos.map((photo) => photo.id),
-        photoNames: payloadPhotos.map((photo) => photo.name),
-      });
-      visionLogOpen = true;
+      if (enableVisionDebug) {
+        console.groupCollapsed("[ListingPilot Vision] analyzePhotos");
+        console.log("calling /api/analyze-photos", {
+          photoCount: payloadPhotos.length,
+        });
+        visionLogOpen = true;
+      }
 
       const response = await fetch("/api/analyze-photos", {
         method: "POST",
@@ -770,36 +915,60 @@ export default function Home() {
         body: JSON.stringify({ photos: payloadPhotos }),
       });
 
-      console.log("Vision route response status", response.status);
-
       if (!response.ok) {
         const errorBody = (await response.json().catch(() => null)) as
           | VisionAnalysisResponse
           | null;
 
-        console.error("Vision route error", errorBody);
-        setVisionDebugResponse(errorBody);
+        if (enableVisionDebug) {
+          console.error("Vision route error", errorBody);
+          setVisionDebugResponse(errorBody);
+        }
 
         throw new Error(errorBody?.error ?? "AI Vision analysis failed.");
       }
 
       const result = (await response.json()) as VisionAnalysisResponse;
-      console.log("Vision route JSON", result);
-      console.groupEnd();
-      visionLogOpen = false;
-      setVisionDebugResponse(result);
+      if (enableVisionDebug) {
+        console.log("Vision route JSON", result);
+        console.groupEnd();
+        visionLogOpen = false;
+        setVisionDebugResponse(result);
+      }
 
-      const visionFindings = result.findings;
+      const retriedPhotoIds = new Set(photosToAnalyze.map((photo) => photo.id));
+      const currentPhotoIds = new Set(
+        latestPhotosRef.current.map((photo) => photo.id),
+      );
+      const freshFindings = (result.findings ?? []).filter((finding) =>
+        currentPhotoIds.has(finding.photoId),
+      );
+      const visionFindings = mergeFindings(
+        latestFindingsRef.current.filter((finding) =>
+          currentPhotoIds.has(finding.photoId),
+        ),
+        freshFindings,
+        retriedPhotoIds,
+      );
+      const failedPhotos = [
+        ...unreadablePhotos,
+        ...(result.failedPhotos ?? []).filter((failure) =>
+          currentPhotoIds.has(failure.photoId),
+        ),
+      ];
+      const failedByPhotoId = new Map(
+        failedPhotos.map((failure) => [failure.photoId, failure]),
+      );
       const confidenceByPhotoId = new Map(
         visionFindings.map((finding) => [
           finding.photoId,
           confidenceScores[finding.confidence],
         ]),
       );
-      const opportunitiesByPhotoId = new Map(
+      const visibleFindingsByPhotoId = new Map(
         visionFindings.map((finding) => [
           finding.photoId,
-          finding.opportunities,
+          finding.visibleFindings,
         ]),
       );
 
@@ -808,86 +977,381 @@ export default function Home() {
           const finding = visionFindings.find(
             (visionFinding) => visionFinding.photoId === photo.id,
           );
+          const failure = failedByPhotoId.get(photo.id);
 
-          return finding
-            ? {
-                ...photo,
-                area: finding.roomType,
-                classificationConfidence:
-                  confidenceByPhotoId.get(photo.id) ??
-                  photo.classificationConfidence,
-                matchedKeywords:
-                  opportunitiesByPhotoId.get(photo.id) ?? photo.matchedKeywords,
-              }
-            : photo;
+          if (finding) {
+            return {
+              ...photo,
+              area:
+                photo.categoryStatus === "agent_corrected"
+                  ? photo.area
+                  : finding.suggestedCategory,
+              categoryStatus:
+                photo.categoryStatus === "agent_corrected"
+                  ? photo.categoryStatus
+                  : "ai_suggested",
+              classificationConfidence:
+                confidenceByPhotoId.get(photo.id) ??
+                photo.classificationConfidence,
+              matchedKeywords:
+                visibleFindingsByPhotoId.get(photo.id) ??
+                photo.matchedKeywords,
+              analysisFailure: undefined,
+            };
+          }
+
+          if (failure) {
+            return {
+              ...photo,
+              analysisFailure: {
+                ...failure,
+                name: photo.displayLabel,
+                message: "Analysis unavailable",
+              },
+              categoryStatus:
+                photo.categoryStatus === "agent_corrected"
+                  ? photo.categoryStatus
+                  : "analysis_failed",
+            };
+          }
+
+          return photo;
         }),
       );
 
-      const nextObservations = buildObservations(photos, visionFindings);
-      const nextRecommendations = recommendImprovements({
-        observations: nextObservations,
-        limit: 12,
-      });
-      const nextReadinessScore = calculatePropertyReadinessScore({
-        observations: nextObservations,
-        recommendations: nextRecommendations,
-      });
       const nextAnalysisConfidence = confidenceFromVisionFindings(visionFindings);
 
-      setFindings(
-        buildFindings({
-          observations: nextObservations,
-          recommendations: nextRecommendations,
-        }),
-      );
-      setRecommendations(nextRecommendations);
-      setReadinessScore(nextReadinessScore);
+      setFindings([]);
+      setRecommendations([]);
+      setReadinessScore(null);
       setAnalysisConfidence(nextAnalysisConfidence);
       setReport(null);
+      if (failedPhotos.length > 0) {
+        setAnalysisError(
+          `${failedPhotos.length} photo${failedPhotos.length === 1 ? "" : "s"} could not be analyzed. Successful findings were preserved.`,
+        );
+        setAnalysisCompletionMessage(
+          `Analysis complete with ${failedPhotos.length} photo${
+            failedPhotos.length === 1 ? "" : "s"
+          } needing attention`,
+        );
+      } else {
+        setAnalysisCompletionMessage("Photo analysis complete");
+      }
+      setVisionDebugResponse({
+        ...result,
+        findings: visionFindings,
+        failedPhotos,
+      });
     } catch (error) {
       setAnalysisError(
         error instanceof Error
           ? error.message
           : "AI Vision analysis could not be completed.",
       );
-      if (visionLogOpen) {
+      if (enableVisionDebug && visionLogOpen) {
         console.groupEnd();
       }
     } finally {
+      isAnalyzingRef.current = false;
       setIsAnalyzing(false);
+      if (analysisQueueRef.current.size > 0) {
+        window.setTimeout(() => {
+          void processAnalysisQueue();
+        }, 0);
+      }
     }
   }
 
-  function createReport() {
-    if (!readinessScore) return;
+  async function generateListingReport() {
+    if (isAnalyzingRef.current) {
+      setAnalysisError("AI is still identifying rooms. Please wait a moment.");
+      return;
+    }
 
+    if (isGeneratingReport) {
+      return;
+    }
+
+    if (!visionDebugResponse?.findings?.length) {
+      setAnalysisError("Upload photos and wait for AI room identification first.");
+      return;
+    }
+
+    const photoById = new Map(photos.map((photo) => [photo.id, photo]));
+    const successfulPhotos = photos.filter(
+      (photo) => !photo.analysisFailure && visionFindingsByPhotoId.has(photo.id),
+    );
+    const missingCategory = successfulPhotos.find((photo) => !photo.area);
+
+    if (missingCategory) {
+      setAnalysisError(
+        "Review all successful photo categories before creating the report.",
+      );
+      return;
+    }
+
+    const confirmedFindings = visionDebugResponse.findings.flatMap((finding) => {
+      const photo = photoById.get(finding.photoId);
+
+      if (!photo || photo.analysisFailure || !photo.area) {
+        return [];
+      }
+
+      return [
+        {
+          ...finding,
+          assignedCategory: photo.area,
+          categoryMismatch: false,
+        },
+      ];
+    });
+
+    if (confirmedFindings.length === 0) {
+      setAnalysisError(
+        "No successfully analyzed photos are ready for scoring yet.",
+      );
+      return;
+    }
+
+    const nextObservations = buildRoomObservations(confirmedFindings);
+    const nextRecommendations = recommendImprovements({
+      observations: nextObservations,
+      limit: 12,
+    });
+    const nextReadinessScore = calculatePropertyReadinessScore({
+      observations: nextObservations,
+      recommendations: nextRecommendations,
+    });
+    const roomSummaries = buildRoomSummariesForSynthesis({
+      observations: nextObservations,
+      recommendations: nextRecommendations,
+    });
+    const missingRecommendedRooms = recommendedCoverageCategories.filter(
+      (category) =>
+        !nextObservations.some(
+          (observation) => observation.roomType === category,
+        ),
+    );
+    const synthesisRequest = {
+      roomSummaries,
+      readiness: nextReadinessScore,
+      coverage: {
+        uploadedPhotoCount: photos.length,
+        analyzedRoomCount: nextObservations.length,
+        coveredRooms: nextObservations.map(
+          (observation) => observation.roomType,
+        ),
+        missingRecommendedRooms,
+      },
+    };
+    let wholePropertyAnalysis =
+      fallbackWholePropertyAnalysis(synthesisRequest);
+
+    setIsGeneratingReport(true);
+    try {
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => {
+        controller.abort();
+      }, SYNTHESIS_TIMEOUT_MS);
+      let synthesisResponse: Response;
+
+      try {
+        synthesisResponse = await fetch("/api/synthesize-report", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(synthesisRequest),
+          signal: controller.signal,
+        });
+      } finally {
+        window.clearTimeout(timeoutId);
+      }
+
+      if (synthesisResponse.ok) {
+        const synthesisResult =
+          (await synthesisResponse.json()) as WholePropertySynthesisResponse;
+
+        wholePropertyAnalysis =
+          synthesisResult.wholePropertyAnalysis ?? wholePropertyAnalysis;
+      }
+    } catch (error) {
+      if (enableVisionDebug) {
+        console.warn("Whole-property synthesis failed; using fallback.", error);
+      }
+    } finally {
+      setIsGeneratingReport(false);
+    }
+    const nextFindings = buildFindings({
+      observations: nextObservations,
+      recommendations: nextRecommendations,
+    });
+    const nextAnalysisConfidence = confidenceFromVisionFindings(confirmedFindings);
+
+    setFindings(nextFindings);
+    setRecommendations(nextRecommendations);
+    setReadinessScore(nextReadinessScore);
+    setAnalysisConfidence(nextAnalysisConfidence);
+    setAnalysisError("");
+    setVisionDebugResponse({
+      ...visionDebugResponse,
+      findings: confirmedFindings,
+    });
     setReport(
       buildReport({
-        confidenceLevel: analysisConfidence,
-        findings,
-        photos,
-        readinessScore,
-        recommendations,
+        confidenceLevel: nextAnalysisConfidence,
+        findings: nextFindings,
+        readinessScore: nextReadinessScore,
+        recommendations: nextRecommendations,
+        roomSummaries,
+        wholePropertyAnalysis,
       }),
     );
+    setExcludedPreparationItemIds(new Set());
   }
 
-  const readyForAnalysis = photos.length > 0;
-  const recommendedCountMet = photos.length >= 20 && photos.length <= 30;
+  const categorizedPhotoCount = coverageItems.filter(
+    ({ count }) => count > 0,
+  ).length;
+  const analysisInProgress = isAnalyzing;
+  const successfulClassifiedPhotoCount = photos.filter(
+    (photo) =>
+      !photo.analysisFailure &&
+      photo.area != null &&
+      visionFindingsByPhotoId.has(photo.id),
+  ).length;
+  const completedAnalysisCount = photos.filter(
+    (photo) =>
+      photo.categoryStatus === "ai_suggested" ||
+      photo.categoryStatus === "agent_corrected" ||
+      photo.categoryStatus === "analysis_failed",
+  ).length;
+  const remainingAnalysisCount = Math.max(
+    photos.length - completedAnalysisCount,
+    0,
+  );
+  const analysisProgressPercent =
+    photos.length > 0
+      ? Math.round((completedAnalysisCount / photos.length) * 100)
+      : 0;
+  const currentAnalyzingPhoto = photos.find(
+    (photo) => photo.categoryStatus === "analyzing",
+  );
+  const currentAnalyzingFinding = currentAnalyzingPhoto
+    ? visionFindingsByPhotoId.get(currentAnalyzingPhoto.id)
+    : undefined;
+  const currentAnalyzingRoom =
+    currentAnalyzingPhoto?.area ??
+    currentAnalyzingFinding?.suggestedCategory ??
+    (analysisInProgress ? "Identifying room" : "None");
+  const currentAnalyzingLabel =
+    currentAnalyzingPhoto?.displayLabel ??
+    (analysisInProgress && photos.length > 0
+      ? `Photo ${Math.min(completedAnalysisCount + 1, photos.length)}`
+      : "");
+  const estimatedAnalysisSeconds = Math.max(5, remainingAnalysisCount * 3);
+  const categoriesReadyForReview = successfulClassifiedPhotoCount > 0;
+  const canGenerateReport =
+    categoriesReadyForReview && !analysisInProgress && !isGeneratingReport;
+  const recommendedCountMet =
+    photos.length >= 12 && photos.length <= PHOTO_UPLOAD_LIMITS.maxPhotos;
+  const visibleChecklistItems =
+    report?.sellerChecklist.filter(
+      (item) => !excludedPreparationItemIds.has(item.id),
+    ) ?? [];
+  const checklistGroups = groupChecklistItems(visibleChecklistItems);
+
+  function togglePreparationItem(itemId: string) {
+    setExcludedPreparationItemIds((currentIds) => {
+      const nextIds = new Set(currentIds);
+
+      if (nextIds.has(itemId)) {
+        nextIds.delete(itemId);
+      } else {
+        nextIds.add(itemId);
+      }
+
+      return nextIds;
+    });
+  }
 
   return (
     <RealtyEdgeShell>
       <div className="flex h-full flex-col bg-[#F0F2F8] text-[#111827]">
         <RealtyEdgePageHeader />
         <div className="flex-1 overflow-y-auto">
-          <section className="mx-auto grid w-full max-w-[1180px] gap-6 px-5 py-6 sm:px-8 lg:grid-cols-[560px_1fr]">
-            <div className="flex min-w-0 flex-col gap-5">
+          {analysisInProgress && (
+            <div
+              aria-live="polite"
+              className="fixed inset-0 z-50 flex items-center justify-center bg-[#111827]/30 px-4 backdrop-blur-[2px]"
+              data-testid="analysis-progress-overlay"
+            >
+              <div className="w-full max-w-2xl rounded-2xl border border-[#E5E7EB] bg-white p-6 text-center shadow-2xl motion-safe:animate-pulse motion-reduce:animate-none sm:p-8">
+                <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-full bg-[rgba(212,160,23,0.14)] text-2xl font-black text-[#B45309] shadow-[0_0_28px_rgba(212,160,23,0.3)] motion-safe:animate-pulse motion-reduce:animate-none">
+                  AI
+                </div>
+                <h2 className="text-2xl font-extrabold text-[#111827] sm:text-3xl">
+                  AI is analyzing your property photos
+                </h2>
+                <p className="mt-3 text-base font-bold text-[#374151]">
+                  {completedAnalysisCount} of {photos.length} photos complete
+                  <span className="mx-2 text-[#D4A017]">·</span>
+                  {analysisProgressPercent}%
+                </p>
+                {currentAnalyzingLabel && (
+                  <p className="mt-2 text-sm font-semibold text-[#6B7280]">
+                    Reviewing {currentAnalyzingLabel}
+                  </p>
+                )}
+                <p className="mt-1 text-sm font-semibold text-[#6B7280]">
+                  Current room:{" "}
+                  <span className="font-extrabold text-[#111827]">
+                    {currentAnalyzingRoom}
+                  </span>
+                </p>
+                <div className="mt-6 h-5 overflow-hidden rounded-full bg-[#E5E7EB]">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-[#D4A017] via-[#F2D27B] to-[#D4A017] transition-all duration-500 motion-safe:animate-pulse motion-reduce:transition-none"
+                    style={{ width: `${analysisProgressPercent}%` }}
+                  />
+                </div>
+                <p className="mt-4 text-sm font-semibold text-[#6B7280]">
+                  {remainingAnalysisCount} photo
+                  {remainingAnalysisCount === 1 ? "" : "s"} remaining
+                </p>
+                <p className="mt-1 text-sm font-semibold text-[#6B7280]">
+                  Estimated time remaining: about {estimatedAnalysisSeconds}{" "}
+                  seconds
+                </p>
+              </div>
+            </div>
+          )}
+          {!analysisInProgress && analysisCompletionMessage && (
+            <div className="sticky top-0 z-40 mx-auto mt-4 max-w-[760px] px-5 sm:px-8">
+              <div
+                className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-center text-sm font-extrabold text-green-800 shadow-lg"
+                data-testid="analysis-completion-message"
+              >
+                {analysisCompletionMessage}
+              </div>
+            </div>
+          )}
+          <section className="mx-auto w-full max-w-[1400px] px-5 py-6 sm:px-8">
+            <div
+              className="grid gap-6 lg:grid-cols-[minmax(0,760px)_minmax(320px,1fr)]"
+              data-testid="workflow-shell"
+            >
+              <div
+                className="flex min-w-0 flex-col gap-5"
+                data-testid="workflow-stack"
+              >
               <div className="grid grid-cols-3 gap-3">
                 {[
                   { label: "Photos", value: photos.length },
                   {
                     label: "Rooms",
-                    value: coverageItems.filter(({ count }) => count > 0).length,
+                    value: categorizedPhotoCount,
                   },
                   {
                     label: "Coverage",
@@ -903,7 +1367,7 @@ export default function Home() {
               </div>
 
               <StepCard
-                description="Upload 20-30 property photos for best coverage."
+                description="For best results, upload 12-20 photos covering all major rooms and the exterior."
                 isReady
                 step={1}
                 title="Upload Photos"
@@ -917,16 +1381,29 @@ export default function Home() {
                     Select or drag property photos
                   </span>
                   <span className="mt-1 text-xs font-medium text-[#6B7280]">
-                    JPG, PNG, or WebP. Up to 30 images.
+                    JPEG, PNG, or WebP. Up to {PHOTO_UPLOAD_LIMITS.maxPhotos} images, {formatBytes(PHOTO_UPLOAD_LIMITS.maxBytesPerPhoto)} each.
+                  </span>
+                  <span className="mt-2 max-w-sm text-xs leading-5 text-[#6B7280]">
+                    AI will identify each room. You can review and correct the
+                    categories before the report is created.
                   </span>
                   <input
-                    accept="image/*"
+                    accept={SUPPORTED_IMAGE_MIME_TYPES.join(",")}
                     className="sr-only"
                     multiple
                     onChange={handlePhotoUpload}
                     type="file"
                   />
                 </label>
+                {uploadIssues.length > 0 && (
+                  <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
+                    {uploadIssues.map((issue) => (
+                      <p key={`${issue.code}-${issue.message}`}>
+                        {issue.message}
+                      </p>
+                    ))}
+                  </div>
+                )}
 
                 <div className="mt-4 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-2.5">
                   <div className="flex items-center justify-between text-sm">
@@ -940,17 +1417,19 @@ export default function Home() {
                           : "font-bold text-[#B45309]"
                       }
                     >
-                      {recommendedCountMet ? "Met" : "20-30 photos"}
+                      {recommendedCountMet
+                        ? "Met"
+                        : `12-${PHOTO_UPLOAD_LIMITS.maxPhotos} photos`}
                     </span>
                   </div>
                 </div>
               </StepCard>
 
               <StepCard
-                description="Review photo coverage guidance and run the AI assessment."
-                isComplete={findings.length > 0}
+                description="AI identifies each room automatically. Review and correct any category before creating the report."
+                isComplete={categoriesReadyForReview}
                 step={2}
-                title="Review Analysis"
+                title="Review Categories"
               >
                 <div className="mb-4 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-2.5">
                   <div className="flex items-center justify-between text-sm">
@@ -970,6 +1449,48 @@ export default function Home() {
                     </span>
                   </div>
                 </div>
+                {photos.length > 0 && (
+                  <div className="mb-4 rounded-xl border border-[#E5E7EB] bg-white p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="label-caps text-[#B45309]">
+                          Analysis Progress
+                        </p>
+                        <p className="mt-1 text-lg font-extrabold text-[#111827]">
+                          {completedAnalysisCount} completed /{" "}
+                          {remainingAnalysisCount} remaining
+                        </p>
+                      </div>
+                      <span className="rounded-full bg-[#F3F4F6] px-2.5 py-1 text-xs font-extrabold text-[#374151]">
+                        {analysisProgressPercent}%
+                      </span>
+                    </div>
+                    <div className="mt-4 h-4 overflow-hidden rounded-full bg-[#E5E7EB]">
+                      <div
+                        className={`h-full rounded-full bg-[#D4A017] transition-all duration-500 ${
+                          analysisInProgress ? "animate-pulse" : ""
+                        }`}
+                        style={{ width: `${analysisProgressPercent}%` }}
+                      />
+                    </div>
+                    <div className="mt-3 grid gap-2 text-sm text-[#6B7280]">
+                      <p>
+                        Current room:{" "}
+                        <span className="font-bold text-[#111827]">
+                          {currentAnalyzingRoom}
+                        </span>
+                      </p>
+                      {currentAnalyzingPhoto && (
+                        <p>
+                          Analyzing{" "}
+                          <span className="font-bold text-[#111827]">
+                            {currentAnalyzingPhoto.displayLabel}
+                          </span>
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
                 {hasPartialCoverage && (
                   <p className="mb-4 rounded-lg border border-[rgba(212,160,23,0.28)] bg-[rgba(212,160,23,0.08)] px-3 py-2 text-sm font-semibold text-[#92640a]">
                     Analysis can run with partial photo coverage. Results may
@@ -1012,14 +1533,11 @@ export default function Home() {
                   )}
                 </div>
 
-                <button
-                  className="btn-press mt-5 flex w-full items-center justify-center rounded-xl bg-[#D4A017] px-5 py-3 text-sm font-extrabold text-[#111827] shadow-[0_2px_8px_rgba(212,160,23,0.3)] transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
-                  disabled={!readyForAnalysis || isAnalyzing}
-                  onClick={analyzePhotos}
-                  type="button"
-                >
-                  {isAnalyzing ? "Analyzing photos..." : "Run AI Analysis"}
-                </button>
+                {!categoriesReadyForReview && photos.length > 0 && (
+                  <p className="mt-3 text-sm font-semibold text-[#6B7280]">
+                    AI room identification starts automatically after upload.
+                  </p>
+                )}
                 {analysisError && (
                   <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
                     {analysisError}
@@ -1031,15 +1549,15 @@ export default function Home() {
                 description="Create the seller-facing optimization report."
                 isComplete={Boolean(report)}
                 step={3}
-                title="Generate Report"
+                title="Generate Listing Report"
               >
                 <button
                   className="btn-press flex w-full items-center justify-center rounded-xl bg-[#1B2238] px-5 py-3 text-sm font-extrabold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
-                  disabled={findings.length === 0}
-                  onClick={createReport}
+                  disabled={!canGenerateReport}
+                  onClick={generateListingReport}
                   type="button"
                 >
-                  Create Report
+                  {isGeneratingReport ? "Generating Report..." : "Generate Report"}
                 </button>
               </StepCard>
 
@@ -1052,7 +1570,10 @@ export default function Home() {
                 <button
                   className="btn-press flex w-full items-center justify-center rounded-xl bg-[#D4A017] px-5 py-3 text-sm font-extrabold text-[#111827] shadow-[0_2px_8px_rgba(212,160,23,0.3)] transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
                   disabled={!report}
-                  onClick={() => report && exportReportPdf(report)}
+                  onClick={() =>
+                    report &&
+                    exportReportPdf(report, excludedPreparationItemIds)
+                  }
                   type="button"
                 >
                   Download PDF
@@ -1060,14 +1581,18 @@ export default function Home() {
               </StepCard>
             </div>
 
-            <div className="min-w-0 space-y-5">
+              <div
+                className="min-w-0 space-y-5 lg:max-h-[calc(100vh-150px)] lg:overflow-y-auto lg:pr-1"
+                data-testid="compact-photo-review"
+              >
               <SectionCard>
                 <div>
                   <h2 className="text-base font-bold text-[#111827]">
                     Uploaded Photos
                   </h2>
                   <p className="mt-1 text-sm text-[#6B7280]">
-                    Confirm or adjust room categories before analysis.
+                    Review AI-suggested categories, then correct any photo that
+                    needs a different room.
                   </p>
                 </div>
 
@@ -1084,8 +1609,23 @@ export default function Home() {
                     </div>
                   </div>
                 ) : (
-                  <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                    {photos.map((photo) => (
+                  <div
+                    className="mt-5 grid gap-3 sm:grid-cols-2 2xl:grid-cols-3"
+                    data-testid="photo-review-grid"
+                  >
+                    {photos.map((photo) => {
+                      const finding = visionFindingsByPhotoId.get(photo.id);
+                      const aiRoom =
+                        finding?.suggestedCategory ??
+                        photo.area ??
+                        (photo.analysisFailure
+                          ? "Analysis unavailable"
+                          : "Identifying room");
+                      const condition =
+                        finding?.condition ??
+                        (photo.analysisFailure ? "No result" : "Pending");
+
+                      return (
                       <article
                         className="overflow-hidden rounded-xl border border-[#E5E7EB] bg-white card-shadow"
                         key={photo.id}
@@ -1093,20 +1633,52 @@ export default function Home() {
                         <div className="aspect-[4/3] bg-[#F3F4F6]">
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
-                            alt={photo.name}
-                            className="h-full w-full object-cover"
+                            alt={photo.displayLabel}
+                            className="h-full w-full object-contain"
                             src={photo.url}
                           />
                         </div>
-                        <div className="space-y-3 p-3.5">
-                          <div>
-                            <p className="truncate text-sm font-bold text-[#111827]">
-                              {photo.name}
-                            </p>
-                            <p className="text-xs text-[#9CA3AF]">
-                              {formatBytes(photo.size)}
-                            </p>
+                        <div className="space-y-2.5 p-3">
+                          <div className="flex min-w-0 items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-bold text-[#111827]">
+                                {photo.displayLabel}
+                              </p>
+                            </div>
+                            <span
+                              className={`shrink-0 rounded-full px-2 py-1 text-[11px] font-extrabold ${
+                                photo.categoryStatus === "agent_corrected"
+                                  ? "bg-blue-50 text-blue-700"
+                                : photo.categoryStatus === "ai_suggested"
+                                    ? "bg-green-50 text-green-700"
+                                    : photo.categoryStatus === "analysis_failed"
+                                      ? "bg-red-50 text-red-700"
+                                    : "bg-[#F3F4F6] text-[#6B7280]"
+                              }`}
+                            >
+                              {photo.categoryStatus === "agent_corrected"
+                                ? "Agent corrected"
+                                : photo.categoryStatus === "ai_suggested"
+                                  ? "AI identified"
+                                  : photo.categoryStatus === "analysis_failed"
+                                    ? "Analysis unavailable"
+                                    : "Analyzing..."}
+                            </span>
                           </div>
+                          <dl className="grid gap-1.5 text-xs">
+                            <div>
+                              <dt className="label-caps">AI Room</dt>
+                              <dd className="mt-1 font-bold text-[#111827]">
+                                {aiRoom}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt className="label-caps">Condition</dt>
+                              <dd className="mt-1 font-bold text-[#111827]">
+                                {condition}
+                              </dd>
+                            </div>
+                          </dl>
                           <select
                             className="rep-input py-2 text-sm"
                             onChange={(event) =>
@@ -1115,183 +1687,184 @@ export default function Home() {
                                 event.target.value as RoomType,
                               )
                             }
-                            value={photo.area}
+                            value={photo.area ?? ""}
                           >
+                            <option disabled value="">
+                              Identifying room
+                            </option>
                             {propertyAreas.map((area) => (
                               <option key={area} value={area}>
                                 {area}
                               </option>
                             ))}
                           </select>
+                          {photo.analysisFailure && (
+                            <div className="space-y-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">
+                              <p>Analysis unavailable</p>
+                              <button
+                                className="text-xs font-extrabold text-red-800 underline underline-offset-2"
+                                disabled={isAnalyzing}
+                                onClick={() => analyzePhotos(new Set([photo.id]))}
+                                type="button"
+                              >
+                                Retry photo
+                              </button>
+                            </div>
+                          )}
+                          <button
+                            className="text-xs font-bold text-[#6B7280] underline underline-offset-2 hover:text-[#111827]"
+                            onClick={() => removePhoto(photo.id)}
+                            type="button"
+                          >
+                            Remove
+                          </button>
                         </div>
                       </article>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </SectionCard>
+              </div>
+            </div>
 
-              {(visionDebugResponse || analysisError) && (
+            <div
+              className="mt-6 min-w-0 space-y-5"
+              data-testid="analyzed-results-section"
+            >
+              {enableVisionDebug &&
+                visionDebugResponse &&
+                !visionDebugResponse.error && (
                 <SectionCard>
                   <div>
                     <p className="label-caps text-[#B45309]">
-                      Vision Validation Debug
+                      Real-Photo Validation
                     </p>
                     <h2 className="mt-2 text-base font-bold text-[#111827]">
-                      OpenAI Vision Response
+                      Listing AI Output Review
                     </h2>
                     <p className="mt-1 text-sm leading-6 text-[#6B7280]">
-                      Temporary validation panel for comparing uploaded photos
-                      against detected room type, condition, confidence, and
-                      opportunities.
+                      Development-only review surface for checking photo-level
+                      classifications, visible findings, recommendations,
+                      readiness contribution, and final report copy.
                     </p>
                   </div>
 
-                  {visionDebugResponse?.error && (
-                    <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-4">
-                      <p className="text-sm font-extrabold text-red-700">
-                        {visionDebugResponse.errorType ?? "vision_error"}
-                      </p>
-                      <p className="mt-2 text-sm leading-6 text-red-700">
-                        {visionDebugResponse.error}
-                      </p>
-                      {visionDebugResponse.detail && (
-                        <pre className="mt-3 max-h-44 overflow-auto rounded-lg bg-white p-3 text-xs text-red-700">
-                          {visionDebugResponse.detail}
-                        </pre>
-                      )}
-                    </div>
-                  )}
-
-                  {visionDebugResponse && !visionDebugResponse.error && (
-                    <>
-                      <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                        <MetricCard
-                          label="Route"
-                          value={
-                            visionDebugResponse.findings.length > 0
-                              ? "Called"
-                              : "No Results"
-                          }
-                        />
-                        <MetricCard
-                          label="Model"
-                          value={visionDebugResponse.model ?? "Unknown"}
-                        />
-                        <MetricCard
-                          label="Photos"
-                          value={
-                            visionDebugResponse.requestedPhotoCount ??
-                            photos.length
-                          }
-                        />
-                      </div>
-
                       <div className="mt-5 space-y-4">
-                        {photos.map((photo) => {
-                          const finding = visionFindingsByPhotoId.get(photo.id);
-
-                          return (
-                            <article
-                              className="grid gap-4 rounded-xl border border-[#E5E7EB] p-4 md:grid-cols-[120px_1fr]"
-                              key={`vision-debug-${photo.id}`}
-                            >
-                              <div className="overflow-hidden rounded-lg bg-[#F3F4F6]">
-                                {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img
-                                  alt={photo.name}
-                                  className="aspect-[4/3] h-full w-full object-cover"
-                                  src={photo.url}
-                                />
-                              </div>
-                              <div>
-                                <p className="truncate text-sm font-bold text-[#111827]">
-                                  {photo.name}
+                        {realPhotoValidationRows.map((row) => (
+                          <article
+                            className="grid min-w-0 gap-4 rounded-xl border border-[#E5E7EB] p-4 md:grid-cols-[140px_minmax(0,1fr)]"
+                            key={`real-photo-validation-${row.photoId}`}
+                          >
+                            <div className="overflow-hidden rounded-lg bg-[#F3F4F6]">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                alt={row.photoName}
+                                className="aspect-[4/3] h-full w-full object-cover"
+                                src={row.previewUrl}
+                              />
+                            </div>
+                            <div className="min-w-0">
+                              <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                                <p
+                                  className="min-w-0 truncate text-sm font-bold text-[#111827]"
+                                  title={row.photoName}
+                                >
+                                  {row.photoName}
                                 </p>
-                                {finding ? (
-                                  <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
-                                    <div>
-                                      <dt className="label-caps">Room Type</dt>
-                                      <dd className="mt-1 font-bold text-[#111827]">
-                                        {finding.roomType}
-                                      </dd>
-                                    </div>
-                                    <div>
-                                      <dt className="label-caps">Condition</dt>
-                                      <dd className="mt-1 font-bold text-[#111827]">
-                                        {finding.condition}
-                                      </dd>
-                                    </div>
-                                    <div>
-                                      <dt className="label-caps">Confidence</dt>
-                                      <dd className="mt-1">
-                                        <ConfidenceBadge
-                                          confidence={finding.confidence}
-                                        />
-                                      </dd>
-                                    </div>
-                                    <div>
-                                      <dt className="label-caps">
-                                        Opportunities
-                                      </dt>
-                                      <dd className="mt-1 text-[#6B7280]">
-                                        {finding.opportunities.length
-                                          ? finding.opportunities.join(", ")
-                                          : "None returned"}
-                                      </dd>
-                                    </div>
-                                  </dl>
-                                ) : (
-                                  <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
-                                    No Vision result returned for this image.
-                                  </p>
-                                )}
+                                <div className="flex flex-wrap gap-2">
+                                  <span
+                                    className={`rounded-full px-2.5 py-1 text-xs font-bold ${
+                                      row.categoryMatchStatus === "Match"
+                                        ? "bg-green-50 text-green-700"
+                                        : row.categoryMatchStatus === "Mismatch"
+                                          ? "bg-amber-50 text-amber-700"
+                                          : "bg-[#F3F4F6] text-[#6B7280]"
+                                    }`}
+                                  >
+                                    {row.categoryMatchStatus}
+                                  </span>
+                                  {row.confidence && (
+                                    <ConfidenceBadge
+                                      confidence={row.confidence}
+                                    />
+                                  )}
+                                </div>
                               </div>
-                            </article>
-                          );
-                        })}
-                      </div>
 
-                      <div className="mt-5 rounded-xl border border-[#E5E7EB] bg-[#F9FAFB] p-4">
-                        <h3 className="text-sm font-bold text-[#111827]">
-                          Vision Validation Report
-                        </h3>
-                        <div className="mt-3 space-y-3 text-sm leading-6 text-[#6B7280]">
-                          <p>
-                            Accuracy observations: compare each uploaded photo
-                            preview above against the detected room type and
-                            condition. Automated correctness scoring requires a
-                            human-labeled expected value for each image.
-                          </p>
-                          <p>
-                            Confidence issues:{" "}
-                            {visionValidationFlags.length
-                              ? visionValidationFlags.join(" ")
-                              : "No low-confidence or missing-result flags were detected in the returned JSON."}
-                          </p>
-                          <p>
-                            Recommendation quality issues: opportunities should
-                            be visible, photo-specific, and limited to property
-                            presentation improvements. Generic or non-visible
-                            opportunities should be treated as weak or
-                            hallucinated.
-                          </p>
-                          <p>
-                            Prompt weaknesses to watch: room ambiguity, overly
-                            broad condition labels, opportunities not grounded
-                            in the image, and confidence that does not decrease
-                            for unclear photos.
-                          </p>
-                        </div>
-                      </div>
+                              <dl className="mt-3 grid min-w-0 gap-3 text-sm sm:grid-cols-2">
+                                <div className="min-w-0">
+                                  <dt className="label-caps">
+                                    Assigned Category
+                                  </dt>
+                                  <dd className="mt-1 break-words font-bold text-[#111827]">
+                                    {row.assignedRoom}
+                                  </dd>
+                                </div>
+                                <div className="min-w-0">
+                                  <dt className="label-caps">
+                                    Vision Suggested Category
+                                  </dt>
+                                  <dd className="mt-1 break-words font-bold text-[#111827]">
+                                    {row.visionRoom ?? "No result"}
+                                  </dd>
+                                </div>
+                                <div className="min-w-0">
+                                  <dt className="label-caps">Condition</dt>
+                                  <dd className="mt-1 break-words font-bold text-[#111827]">
+                                    {row.condition ?? "No result"}
+                                  </dd>
+                                </div>
+                                <div className="min-w-0">
+                                  <dt className="label-caps">
+                                    Readiness Contribution
+                                  </dt>
+                                  <dd className="mt-1 break-words font-bold text-[#111827]">
+                                    {row.readinessContribution != null
+                                      ? `${row.readinessContribution}/100 room score`
+                                      : "Not scored"}
+                                  </dd>
+                                </div>
+                                <div className="min-w-0 sm:col-span-2">
+                                  <dt className="label-caps">
+                                    Visible Findings
+                                  </dt>
+                                  <dd className="mt-1 break-words text-[#6B7280]">
+                                    {row.visibleFindings.length
+                                      ? row.visibleFindings.join(", ")
+                                      : "None returned"}
+                                  </dd>
+                                </div>
+                                <div className="min-w-0 sm:col-span-2">
+                                  <dt className="label-caps">
+                                    Supported Recommendations
+                                  </dt>
+                                  <dd className="mt-1 break-words text-[#6B7280]">
+                                    {row.supportedRecommendations.length
+                                      ? row.supportedRecommendations.join(", ")
+                                      : "None returned"}
+                                  </dd>
+                                </div>
+                                <div className="min-w-0 sm:col-span-2">
+                                  <dt className="label-caps">
+                                    Selected Recommendation
+                                  </dt>
+                                  <dd className="mt-1 break-words text-[#6B7280]">
+                                    {row.selectedRecommendation ??
+                                      "No recommendation selected"}
+                                  </dd>
+                                </div>
+                              </dl>
 
-                      <div className="mt-5">
-                        <p className="label-caps">Raw Vision JSON</p>
-                        <pre className="mt-3 max-h-96 overflow-auto rounded-xl border border-[#E5E7EB] bg-[#111827] p-4 text-xs leading-5 text-white">
-                          {JSON.stringify(visionDebugResponse, null, 2)}
-                        </pre>
+                              {row.failure && (
+                                <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
+                                  {row.failure}
+                                </p>
+                              )}
+                            </div>
+                          </article>
+                        ))}
                       </div>
-                    </>
-                  )}
                 </SectionCard>
               )}
 
@@ -1319,27 +1892,12 @@ export default function Home() {
                       value={`${readinessScore.score}/100`}
                     />
                     <MetricCard
-                      label="Investment"
-                      value={summarizeCurrencyRanges(
-                        recommendations
-                          .slice(0, 3)
-                          .map(
-                            (recommendation) =>
-                              recommendation.improvement.typicalCostRange,
-                          ),
-                      )}
+                      label="Preparation Items"
+                      value={String(recommendations.slice(0, 8).length)}
                     />
                     <MetricCard
-                      label="Added Value"
-                      value={summarizeCurrencyRanges(
-                        recommendations
-                          .slice(0, 3)
-                          .map(
-                            (recommendation) =>
-                              recommendation.improvement
-                                .potentialAddedSaleValueRange,
-                          ),
-                      )}
+                      label="Confidence"
+                      value={analysisConfidence}
                     />
                   </div>
 
@@ -1418,15 +1976,25 @@ export default function Home() {
                       Generated Report
                     </p>
                     <h2 className="mt-2 text-xl font-extrabold text-[#111827]">
-                      Home Sale Optimization Report
+                      Home Sale Readiness Report
                     </h2>
                   </div>
 
-                  <div className="grid gap-0 lg:grid-cols-[1fr_320px]">
+                  <div>
                     <div className="space-y-6 p-5">
                   <section>
                     <h3 className="text-base font-bold text-[#111827]">
-                      Property Summary
+                      A. Property Overview
+                    </h3>
+                    <p className="mt-2 text-sm leading-6 text-[#6B7280]">
+                      Home Sale Readiness Report prepared from the uploaded
+                      ListingPilot AI photo analysis.
+                    </p>
+                  </section>
+
+                  <section>
+                    <h3 className="text-base font-bold text-[#111827]">
+                      B. Executive Summary
                     </h3>
                     <p className="mt-2 text-sm leading-6 text-[#6B7280]">
                       {report.propertySummary}
@@ -1437,31 +2005,31 @@ export default function Home() {
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <h3 className="text-base font-bold text-[#111827]">
-                          Property Readiness
+                          C. Listing Readiness
                         </h3>
                         <p className="mt-2 text-sm leading-6 text-[#6B7280]">
-                          {report.readinessScore.summary}
+                          {report.readinessPresentation.narrative}
                         </p>
                       </div>
                       <ConfidenceBadge confidence={report.confidenceLevel} />
                     </div>
                     <div className="mt-3 grid gap-3 md:grid-cols-3">
                       <div className="rounded-xl border border-[#E5E7EB] bg-[#F9FAFB] p-4">
-                        <p className="label-caps">Status</p>
+                        <p className="label-caps">Score</p>
                         <p className="mt-2 font-bold text-[#111827]">
-                          {report.readinessScore.status}
+                          {report.readinessPresentation.score}/100
                         </p>
                       </div>
                       <div className="rounded-xl border border-[#E5E7EB] bg-[#F9FAFB] p-4">
-                        <p className="label-caps">Investment</p>
+                        <p className="label-caps">Readiness Label</p>
                         <p className="mt-2 font-bold text-[#111827]">
-                          {report.recommendedInvestmentRange}
+                          {report.readinessPresentation.label}
                         </p>
                       </div>
                       <div className="rounded-xl border border-[#E5E7EB] bg-[#F9FAFB] p-4">
-                        <p className="label-caps">Added Value</p>
+                        <p className="label-caps">Confidence</p>
                         <p className="mt-2 font-bold text-[#111827]">
-                          {report.potentialAddedSaleValueRange}
+                          {report.readinessPresentation.confidence}
                         </p>
                       </div>
                     </div>
@@ -1469,121 +2037,155 @@ export default function Home() {
 
                   <section>
                     <h3 className="text-base font-bold text-[#111827]">
-                      Current Market Value
+                      D. Top Selling Features
                     </h3>
-                    <p className="mt-2 rounded-lg border border-dashed border-[#D1D5DB] bg-[#F9FAFB] p-3 text-sm leading-6 text-[#6B7280]">
-                      {report.marketValue}
-                    </p>
+                    <ul className="mt-3 grid gap-2 text-sm leading-6 text-[#6B7280] md:grid-cols-2">
+                      {report.wholePropertyAnalysis.topSellingFeatures.map(
+                        (feature) => (
+                          <li
+                            className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-2"
+                            key={feature}
+                          >
+                            {feature}
+                          </li>
+                        ),
+                      )}
+                    </ul>
                   </section>
 
                   <section>
-                    <h3 className="text-base font-bold text-[#111827]">AI Findings</h3>
-                    <div className="mt-3 space-y-3">
-                      {report.findings.map((finding) => (
-                        <div
-                          key={finding.area}
+                    <h3 className="text-base font-bold text-[#111827]">
+                      E. Highest-Impact Preparation Priorities
+                    </h3>
+                    <ul className="mt-3 space-y-2 text-sm leading-6 text-[#6B7280]">
+                      {report.wholePropertyAnalysis.topImprovementPriorities.map(
+                        (priority) => (
+                          <li key={priority}>{priority}</li>
+                        ),
+                      )}
+                    </ul>
+                  </section>
+
+                  <section>
+                    <h3 className="text-base font-bold text-[#111827]">
+                      F. Room-by-Room Summary
+                    </h3>
+                    <div className="mt-3 grid gap-3 xl:grid-cols-2">
+                      {report.roomSummaries.map((summary) => (
+                        <article
                           className="rounded-xl border border-[#E5E7EB] p-4"
+                          key={summary.room}
                         >
-                          <div className="flex items-center justify-between gap-3">
-                            <p className="font-bold text-[#111827]">{finding.area}</p>
-                                <ConfidenceBadge
-                                  confidence={finding.confidence}
-                                />
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="font-bold text-[#111827]">
+                                {summary.room}
+                              </p>
+                              <p className="mt-1 text-xs font-bold uppercase tracking-[0.08em] text-[#9CA3AF]">
+                                {summary.overallCondition}
+                              </p>
+                            </div>
+                            <ConfidenceBadge confidence={summary.confidence} />
                           </div>
-                          <p className="mt-2 text-sm leading-6 text-[#6B7280]">
-                            {finding.condition}
+                          <p className="mt-3 text-sm leading-6 text-[#6B7280]">
+                            {summary.shortSummary}
                           </p>
-                          <p className="label-caps mt-3">
-                            Seller Talking Points
-                          </p>
-                          <ul className="mt-2 space-y-1 text-sm leading-6 text-[#6B7280]">
-                            {finding.sellerTalkingPoints.map((point) => (
-                              <li key={point}>{point}</li>
-                            ))}
-                          </ul>
-                        </div>
+                          <dl className="mt-3 grid gap-3 text-sm">
+                            <div>
+                              <dt className="label-caps">
+                                Strongest Selling Feature
+                              </dt>
+                              <dd className="mt-1 text-[#6B7280]">
+                                {summary.strongestSellingFeature}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt className="label-caps">
+                                Top Preparation Recommendation
+                              </dt>
+                              <dd className="mt-1 text-[#6B7280]">
+                                {summary.topPreparationRecommendation}
+                              </dd>
+                            </div>
+                          </dl>
+                        </article>
                       ))}
                     </div>
                   </section>
 
                   <section>
                     <h3 className="text-base font-bold text-[#111827]">
-                      Recommended Improvements
+                      G. Seller Preparation Checklist
                     </h3>
-                    <div className="mt-3 overflow-hidden rounded-xl border border-[#E5E7EB]">
-                      <div className="grid grid-cols-[1fr_120px_140px] bg-[#F9FAFB] px-4 py-3">
-                        <span className="label-caps">Recommendation</span>
-                        <span className="label-caps">Cost</span>
-                        <span className="label-caps">Added Value</span>
-                      </div>
-                      {report.improvements.map((improvement) => (
-                        <div
-                          key={`${improvement.area}-${improvement.recommendation}`}
-                          className="grid grid-cols-[1fr_120px_140px] gap-3 border-t border-[#F3F4F6] px-4 py-3 text-sm"
-                        >
-                          <div>
-                            <p className="font-bold text-[#111827]">
-                              {improvement.area} - {improvement.priority}
-                            </p>
-                            <p className="mt-1 leading-6 text-[#6B7280]">
-                              {improvement.recommendation}
-                            </p>
+                    <p className="mt-1 text-sm leading-6 text-[#6B7280]">
+                      Use the checkboxes to include or exclude individual items
+                      from the seller-facing PDF.
+                    </p>
+                    <div className="mt-3 space-y-4">
+                      {Object.entries(checklistGroups).map(([group, items]) =>
+                        items.length > 0 ? (
+                          <div key={group}>
+                            <h4 className="text-sm font-bold text-[#111827]">
+                              {group}
+                            </h4>
+                            <div className="mt-2 space-y-2">
+                              {items.map((item) => (
+                                <label
+                                  className="flex gap-3 rounded-xl border border-[#E5E7EB] p-3 text-sm"
+                                  key={item.id}
+                                >
+                                  <input
+                                    checked={
+                                      !excludedPreparationItemIds.has(item.id)
+                                    }
+                                    className="mt-1 h-4 w-4"
+                                    onChange={() =>
+                                      togglePreparationItem(item.id)
+                                    }
+                                    type="checkbox"
+                                  />
+                                  <span>
+                                    <span className="block font-bold text-[#111827]">
+                                      {item.task}
+                                    </span>
+                                    <span className="mt-1 block text-[#6B7280]">
+                                      {item.room} | {item.priority} priority |{" "}
+                                      {item.effortLevel} | Estimated time:{" "}
+                                      {item.estimatedTime}
+                                    </span>
+                                    <span className="mt-1 block leading-6 text-[#6B7280]">
+                                      {item.reason}
+                                    </span>
+                                  </span>
+                                </label>
+                              ))}
+                            </div>
                           </div>
-                          <span className="font-semibold text-[#374151]">
-                            {improvement.estimatedCost}
-                          </span>
-                          <span className="font-semibold text-[#374151]">
-                            {improvement.potentialAddedValue}
-                          </span>
-                        </div>
-                      ))}
+                        ) : null,
+                      )}
                     </div>
                   </section>
 
                   <section>
                     <h3 className="text-base font-bold text-[#111827]">
-                      Sell As-Is vs Improve Comparison
+                      H. Marketing Highlights
                     </h3>
-                    <div className="mt-3 grid gap-3 md:grid-cols-2">
-                      <div className="rounded-xl border border-[#E5E7EB] bg-[#F9FAFB] p-4">
-                        <p className="font-bold text-[#111827]">Sell As-Is</p>
-                        <p className="mt-2 text-sm leading-6 text-[#6B7280]">
-                          {report.asIsSummary}
-                        </p>
-                      </div>
-                      <div className="rounded-xl border border-[rgba(212,160,23,0.28)] bg-[rgba(212,160,23,0.08)] p-4">
-                        <p className="font-bold text-[#92640a]">
-                          Improve Before Launch
-                        </p>
-                        <p className="mt-2 text-sm leading-6 text-[#6B7280]">
-                          {report.improveSummary}
-                        </p>
-                      </div>
-                    </div>
-                  </section>
-                </div>
-
-                <aside className="border-t border-[#E5E7EB] bg-[#F9FAFB] p-5 lg:border-l lg:border-t-0">
-                  <section>
-                    <h3 className="text-base font-bold text-[#111827]">
-                      Marketing Strategy
-                    </h3>
-                    <ul className="mt-3 space-y-3 text-sm leading-6 text-[#6B7280]">
+                    <ul className="mt-3 space-y-2 text-sm leading-6 text-[#6B7280]">
                       {report.marketingStrategy.map((strategy) => (
                         <li key={strategy}>{strategy}</li>
                       ))}
                     </ul>
                   </section>
 
-                  <section className="mt-8">
-                    <h3 className="text-base font-bold text-[#111827]">Next Steps</h3>
-                    <ol className="mt-3 space-y-3 text-sm leading-6 text-[#6B7280]">
-                      {report.nextSteps.map((step) => (
-                        <li key={step}>{step}</li>
-                      ))}
-                    </ol>
+                  <section>
+                    <h3 className="text-base font-bold text-[#111827]">
+                      I. Important Limitations / Agent Review Note
+                    </h3>
+                    <p className="mt-2 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-3 text-sm leading-6 text-[#6B7280]">
+                      {limitationsNote}
+                    </p>
                   </section>
-                </aside>
+                </div>
               </div>
             </div>
           )}
