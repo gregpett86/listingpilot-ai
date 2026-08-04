@@ -4,6 +4,7 @@ import {
   calculateReadiness,
   chooseCoverPhoto,
   chooseInteriorPhoto,
+  resolvePropertyHeroPhoto,
   isUsableImageDataUrl,
   inferRoomFromFilename,
   improvements,
@@ -19,6 +20,14 @@ function photo(id: string, roomLabel: UploadedPhoto["roomLabel"]): UploadedPhoto
     name: `${id}.jpg`,
     dataUrl: validPngDataUrl,
     roomLabel,
+  };
+}
+
+function landscapePhoto(id: string, roomLabel: UploadedPhoto["roomLabel"]): UploadedPhoto {
+  return {
+    ...photo(id, roomLabel),
+    height: 900,
+    width: 1600,
   };
 }
 
@@ -66,7 +75,7 @@ describe("listing readiness report data", () => {
     expect(chooseCoverPhoto(photos)?.id).toBe("living");
   });
 
-  it("uses a photo labeled Cover before exterior fallback", () => {
+  it("uses an agent-labeled Cover before exterior fallback", () => {
     const photos = [
       photo("front", "Exterior"),
       photo("manual-cover", "Cover"),
@@ -74,35 +83,80 @@ describe("listing readiness report data", () => {
     ];
 
     expect(chooseCoverPhoto(photos)?.id).toBe("manual-cover");
+    expect(resolvePropertyHeroPhoto(photos).source).toBe("uploaded_agent_selected");
   });
 
-  it("uses exterior as the cover when no explicit cover is designated", () => {
+  it("selects an uploaded front exterior as the property hero", () => {
     const photos = [
       photo("kitchen", "Kitchen"),
-      photo("front", "Exterior"),
+      landscapePhoto("front-elevation-driveway", "Exterior"),
       photo("back", "Backyard"),
+    ];
+
+    const hero = resolvePropertyHeroPhoto(photos);
+
+    expect(hero.photo?.id).toBe("front-elevation-driveway");
+    expect(hero.roomClassification).toBe("front_exterior");
+    expect(hero.source).toBe("uploaded_ai_selected");
+  });
+
+  it("selects the best front exterior when multiple exterior photos exist", () => {
+    const photos = [
+      { ...landscapePhoto("side-exterior", "Exterior"), name: "side-exterior.jpg" },
+      { ...landscapePhoto("front-full-house-driveway", "Exterior"), name: "front-full-house-driveway.jpg" },
+      { ...photo("front-portrait", "Exterior"), height: 1600, width: 900 },
+    ];
+
+    expect(resolvePropertyHeroPhoto(photos).photo?.id).toBe("front-full-house-driveway");
+  });
+
+  it("prefers exterior over interior for the hero", () => {
+    const photos = [
+      photo("living", "Living Room"),
+      landscapePhoto("front", "Exterior"),
+      photo("kitchen", "Kitchen"),
+    ];
+
+    expect(resolvePropertyHeroPhoto(photos).photo?.id).toBe("front");
+  });
+
+  it("requests address lookup fallback when no uploaded exterior exists", () => {
+    const photos = [
+      photo("living", "Living Room"),
+      photo("kitchen", "Kitchen"),
+    ];
+    const streetViewPhoto = landscapePhoto("street-view", "Exterior");
+    const hero = resolvePropertyHeroPhoto(photos, {
+      photo: streetViewPhoto,
+      providerName: "Street View Provider",
+      source: "street_view",
+    });
+
+    expect(hero.lookupRequested).toBe(true);
+    expect(hero.photo?.id).toBe("street-view");
+    expect(hero.source).toBe("street_view");
+  });
+
+  it("marks the hero unavailable when lookup fails and no exterior exists", () => {
+    const hero = resolvePropertyHeroPhoto([photo("living", "Living Room")], {
+      error: "Provider credentials are not configured.",
+      providerName: "Street View Provider",
+      source: "street_view",
+    });
+
+    expect(hero.lookupRequested).toBe(true);
+    expect(hero.photo).toBeUndefined();
+    expect(hero.source).toBe("unavailable");
+    expect(hero.reason).toContain("Provider credentials");
+  });
+
+  it("does not automatically use a living room as the cover when an exterior exists", () => {
+    const photos = [
+      photo("living", "Living Room"),
+      landscapePhoto("front", "Exterior"),
     ];
 
     expect(chooseCoverPhoto(photos)?.id).toBe("front");
-  });
-
-  it("falls back to the first valid uploaded image when no cover or exterior exists", () => {
-    const photos = [
-      photo("living", "Living Room"),
-      photo("kitchen", "Kitchen"),
-    ];
-
-    expect(chooseCoverPhoto(photos)?.id).toBe("living");
-  });
-
-  it("uses backyard or rear exterior before the first uploaded fallback", () => {
-    const photos = [
-      photo("living", "Living Room"),
-      photo("back", "Backyard"),
-      photo("kitchen", "Kitchen"),
-    ];
-
-    expect(chooseCoverPhoto(photos)?.id).toBe("back");
   });
 
   it("ignores unusable uploaded image data for cover selection", () => {
@@ -112,7 +166,7 @@ describe("listing readiness report data", () => {
     ];
 
     expect(isUsableImageDataUrl(photos[0].dataUrl)).toBe(false);
-    expect(chooseCoverPhoto(photos)?.id).toBe("living");
+    expect(chooseCoverPhoto(photos)).toBeUndefined();
   });
 
   it("infers room labels from filenames", () => {

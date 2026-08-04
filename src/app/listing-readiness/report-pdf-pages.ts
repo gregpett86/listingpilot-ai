@@ -211,10 +211,10 @@ export function PdfCover(ctx: PdfContext, property: PropertyDetails, summary: Re
   const footerY = 204.6;
   const opportunity = Math.max(0, summary.potentialScore - summary.currentScore);
 
-  if (summary.coverPhoto) {
+  if (summary.propertyHeroPhoto.photo) {
     drawPhotoFrame(
       doc,
-      summary.coverPhoto,
+      summary.propertyHeroPhoto.photo,
       { x: 0, y: 0, w: pdfPage.width, h: heroHeight },
       { placeholder: "none" },
     );

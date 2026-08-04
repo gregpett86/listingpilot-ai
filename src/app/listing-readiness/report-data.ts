@@ -29,11 +29,52 @@ export type PropertyDetails = {
 };
 
 export type UploadedPhoto = {
+  height?: number;
   id: string;
   isCoverPreferred?: boolean;
   name: string;
   dataUrl: string;
   roomLabel: RoomLabel;
+  width?: number;
+};
+
+export type HeroPhotoSource =
+  | "uploaded_ai_selected"
+  | "uploaded_agent_selected"
+  | "street_view"
+  | "property_provider"
+  | "unavailable";
+
+export type HeroPhotoClassification =
+  | "front_exterior"
+  | "rear_exterior"
+  | "side_exterior"
+  | "backyard"
+  | "interior"
+  | "unavailable";
+
+export type UploadedPhotoClassification = {
+  confidence: number;
+  exteriorScore: number;
+  photo: UploadedPhoto;
+  roomClassification: HeroPhotoClassification;
+};
+
+export type AddressHeroPhotoLookupResult = {
+  error?: string;
+  photo?: UploadedPhoto;
+  providerName: string;
+  source: Extract<HeroPhotoSource, "street_view" | "property_provider">;
+};
+
+export type PropertyHeroPhoto = {
+  agentOverrode: boolean;
+  aiConfidence: number;
+  lookupRequested: boolean;
+  photo?: UploadedPhoto;
+  reason: string;
+  roomClassification: HeroPhotoClassification;
+  source: HeroPhotoSource;
 };
 
 export type RoomLabel =
@@ -82,6 +123,7 @@ export type ReadinessSummary = {
   strongestPhoto?: UploadedPhoto;
   kitchenPhoto?: UploadedPhoto;
   marketingPhoto?: UploadedPhoto;
+  propertyHeroPhoto: PropertyHeroPhoto;
   secondaryDetailRoom?: RoomOverview;
 };
 
@@ -334,6 +376,10 @@ export function inferRoomFromFilename(name: string): RoomLabel {
   return "Other";
 }
 
+function normalizedPhotoName(photo: UploadedPhoto) {
+  return photo.name.toLowerCase().replace(/[_-]+/g, " ");
+}
+
 export function isUsableImageDataUrl(dataUrl: string) {
   return /^data:image\/(png|jpe?g|webp);base64,[a-z0-9+/=]+$/i.test(dataUrl);
 }
@@ -342,16 +388,146 @@ export function validUploadedPhotos(photos: UploadedPhoto[]) {
   return photos.filter((photo) => isUsableImageDataUrl(photo.dataUrl));
 }
 
-export function chooseCoverPhoto(photos: UploadedPhoto[]) {
-  const validPhotos = validUploadedPhotos(photos);
+export function classifyUploadedPhotoForHero(photo: UploadedPhoto): UploadedPhotoClassification {
+  const normalized = normalizedPhotoName(photo);
+  const isLandscape =
+    typeof photo.width === "number" &&
+    typeof photo.height === "number" &&
+    photo.width >= photo.height;
 
-  return (
-    validPhotos.find((photo) => photo.isCoverPreferred) ??
-    validPhotos.find((photo) => photo.roomLabel === "Cover") ??
-    validPhotos.find((photo) => photo.roomLabel === "Exterior") ??
-    validPhotos.find((photo) => photo.roomLabel === "Backyard") ??
-    validPhotos[0]
+  if (photo.roomLabel === "Backyard" || /backyard|rear yard|terrace|patio|pool|garden/.test(normalized)) {
+    return {
+      confidence: photo.roomLabel === "Backyard" ? 0.86 : 0.74,
+      exteriorScore: 54 + (isLandscape ? 6 : 0),
+      photo,
+      roomClassification: "backyard",
+    };
+  }
+
+  if (/rear|back exterior|back elevation/.test(normalized)) {
+    return {
+      confidence: 0.78,
+      exteriorScore: 58 + (isLandscape ? 6 : 0),
+      photo,
+      roomClassification: "rear_exterior",
+    };
+  }
+
+  if (/side exterior|side elevation|side yard/.test(normalized)) {
+    return {
+      confidence: 0.76,
+      exteriorScore: 56 + (isLandscape ? 6 : 0),
+      photo,
+      roomClassification: "side_exterior",
+    };
+  }
+
+  if (
+    photo.roomLabel === "Exterior" ||
+    photo.roomLabel === "Cover" ||
+    /front|facade|facade|elevation|curb|driveway|entry|exterior|street view/.test(normalized)
+  ) {
+    const fullHouseCue = /front|facade|facade|elevation|curb|driveway/.test(normalized);
+    const manualExteriorCue = photo.roomLabel === "Exterior" || photo.roomLabel === "Cover";
+    return {
+      confidence: fullHouseCue ? 0.92 : manualExteriorCue ? 0.82 : 0.76,
+      exteriorScore:
+        82 +
+        (fullHouseCue ? 10 : 0) +
+        (manualExteriorCue ? 5 : 0) +
+        (isLandscape ? 8 : 0),
+      photo,
+      roomClassification: "front_exterior",
+    };
+  }
+
+  return {
+    confidence: 0.64,
+    exteriorScore: 0,
+    photo,
+    roomClassification: "interior",
+  };
+}
+
+export function chooseBestUploadedHeroPhoto(photos: UploadedPhoto[]) {
+  const classified = validUploadedPhotos(photos)
+    .map(classifyUploadedPhotoForHero)
+    .filter((classification) => classification.roomClassification === "front_exterior")
+    .sort((a, b) => b.exteriorScore - a.exteriorScore);
+
+  return classified[0];
+}
+
+export function resolveAddressHeroPhoto(
+  property: PropertyDetails,
+): AddressHeroPhotoLookupResult | undefined {
+  void property;
+  return undefined;
+}
+
+export function resolvePropertyHeroPhoto(
+  photos: UploadedPhoto[],
+  lookupResult?: AddressHeroPhotoLookupResult,
+): PropertyHeroPhoto {
+  const validPhotos = validUploadedPhotos(photos);
+  const agentSelected = validPhotos.find(
+    (photo) => photo.isCoverPreferred || photo.roomLabel === "Cover",
   );
+
+  if (agentSelected) {
+    const classification = classifyUploadedPhotoForHero(agentSelected);
+    return {
+      agentOverrode: true,
+      aiConfidence: classification.confidence,
+      lookupRequested: false,
+      photo: agentSelected,
+      reason: "Agent manually selected this image as the cover hero.",
+      roomClassification: classification.roomClassification,
+      source: "uploaded_agent_selected",
+    };
+  }
+
+  const uploadedHero = chooseBestUploadedHeroPhoto(validPhotos);
+  if (uploadedHero) {
+    return {
+      agentOverrode: false,
+      aiConfidence: uploadedHero.confidence,
+      lookupRequested: false,
+      photo: uploadedHero.photo,
+      reason: "Selected from uploaded photos because it best matches a front exterior elevation.",
+      roomClassification: uploadedHero.roomClassification,
+      source: "uploaded_ai_selected",
+    };
+  }
+
+  if (lookupResult?.photo) {
+    return {
+      agentOverrode: false,
+      aiConfidence: 0.78,
+      lookupRequested: true,
+      photo: lookupResult.photo,
+      reason: `Resolved from ${lookupResult.providerName} using the property address.`,
+      roomClassification: "front_exterior",
+      source: lookupResult.source,
+    };
+  }
+
+  return {
+    agentOverrode: false,
+    aiConfidence: 0,
+    lookupRequested: true,
+    reason:
+      lookupResult?.error ??
+      "No uploaded front exterior was found and no address-based exterior image provider is configured.",
+    roomClassification: "unavailable",
+    source: "unavailable",
+  };
+}
+
+export function chooseCoverPhoto(photos: UploadedPhoto[]) {
+  const heroPhoto = resolvePropertyHeroPhoto(photos);
+
+  return heroPhoto.photo;
 }
 
 export function chooseInteriorPhoto(photos: UploadedPhoto[]) {
@@ -455,8 +631,13 @@ export function buildRoomOverviews(
 export function buildReadinessSummary(
   selectedIds: number[],
   photos: UploadedPhoto[],
+  options: { addressHeroPhotoLookup?: AddressHeroPhotoLookupResult } = {},
 ): ReadinessSummary {
   const readiness = calculateReadiness(selectedIds);
+  const propertyHeroPhoto = resolvePropertyHeroPhoto(
+    photos,
+    options.addressHeroPhotoLookup,
+  );
   const roomOverviews = buildRoomOverviews(
     photos,
     readiness.selectedRecommendations,
@@ -478,11 +659,12 @@ export function buildReadinessSummary(
     categoryScores,
     roomOverviews,
     photos,
-    coverPhoto: chooseCoverPhoto(photos),
+    coverPhoto: propertyHeroPhoto.photo,
     executivePhoto: chooseInteriorPhoto(photos),
     strongestPhoto: chooseStrongestPhoto(photos),
     kitchenPhoto: validUploadedPhotos(photos).find((photo) => photo.roomLabel === "Kitchen"),
     marketingPhoto: chooseMarketingPhoto(photos),
+    propertyHeroPhoto,
     secondaryDetailRoom: chooseSecondaryDetailRoom(roomOverviews),
   };
 }

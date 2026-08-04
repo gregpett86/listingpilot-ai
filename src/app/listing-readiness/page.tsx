@@ -35,12 +35,14 @@ function loadImage(dataUrl: string) {
   });
 }
 
-async function readFileAsPdfImageDataUrl(file: File) {
+async function readFileAsPdfImage(file: File) {
   const dataUrl = await readFileAsDataUrl(file);
   const image = await loadImage(dataUrl);
   const canvas = document.createElement("canvas");
-  canvas.width = image.naturalWidth || image.width;
-  canvas.height = image.naturalHeight || image.height;
+  const width = image.naturalWidth || image.width;
+  const height = image.naturalHeight || image.height;
+  canvas.width = width;
+  canvas.height = height;
 
   const context = canvas.getContext("2d");
   if (!context) {
@@ -50,7 +52,11 @@ async function readFileAsPdfImageDataUrl(file: File) {
   context.fillStyle = "#082442";
   context.fillRect(0, 0, canvas.width, canvas.height);
   context.drawImage(image, 0, 0, canvas.width, canvas.height);
-  return canvas.toDataURL("image/jpeg", 0.92);
+  return {
+    dataUrl: canvas.toDataURL("image/jpeg", 0.92),
+    height,
+    width,
+  };
 }
 
 function CheckIcon() {
@@ -124,13 +130,16 @@ export default function ListingReadinessPage() {
 
     try {
       const uploadedPhotos: UploadedPhoto[] = await Promise.all(
-        files.map(async (file) => ({
-          id: `${file.name}-${file.size}-${file.lastModified}-${crypto.randomUUID()}`,
-          isCoverPreferred: false,
-          name: file.name,
-          dataUrl: await readFileAsPdfImageDataUrl(file),
-          roomLabel: "Other",
-        })),
+        files.map(async (file) => {
+          const preparedPhoto = await readFileAsPdfImage(file);
+          return {
+            id: `${file.name}-${file.size}-${file.lastModified}-${crypto.randomUUID()}`,
+            isCoverPreferred: false,
+            name: file.name,
+            ...preparedPhoto,
+            roomLabel: "Other",
+          };
+        }),
       );
 
       setPhotos((currentPhotos) => [...currentPhotos, ...uploadedPhotos]);
@@ -295,6 +304,76 @@ export default function ListingReadinessPage() {
                   for this test property.
                 </p>
               )}
+            </section>
+
+            <section className="mt-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <p className="text-xs font-black uppercase tracking-[0.22em] text-[#9a7100]">
+                Cover Photo
+              </p>
+              {summary.propertyHeroPhoto.photo ? (
+                <div className="mt-4 flex flex-col gap-4 sm:flex-row">
+                  <div
+                    aria-label={`Selected cover photo: ${summary.propertyHeroPhoto.photo.name}`}
+                    className="h-32 rounded-xl bg-cover bg-center sm:w-48"
+                    role="img"
+                    style={{
+                      backgroundImage: `url(${summary.propertyHeroPhoto.photo.dataUrl})`,
+                    }}
+                  />
+                  <div className="self-center">
+                    <p className="text-sm font-bold text-slate-500">
+                      {summary.propertyHeroPhoto.agentOverrode
+                        ? "Agent Selected:"
+                        : "AI Selected:"}
+                    </p>
+                    <h4 className="mt-1 text-lg font-black text-[#082442]">
+                      {summary.propertyHeroPhoto.roomClassification
+                        .replace(/_/g, " ")
+                        .replace(/\b\w/g, (letter) => letter.toUpperCase())}
+                    </h4>
+                    <p className="mt-1 text-sm text-slate-600">
+                      Confidence:{" "}
+                      {Math.round(summary.propertyHeroPhoto.aiConfidence * 100)}%
+                    </p>
+                    <p className="mt-2 max-w-lg text-sm text-slate-500">
+                      {summary.propertyHeroPhoto.reason}
+                    </p>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <button
+                        className="rounded-lg bg-[#082442] px-4 py-2 text-sm font-black text-white disabled:opacity-50"
+                        disabled={summary.propertyHeroPhoto.agentOverrode}
+                        onClick={() =>
+                          summary.propertyHeroPhoto.photo &&
+                          markCoverPhoto(summary.propertyHeroPhoto.photo.id)
+                        }
+                        type="button"
+                      >
+                        Use This Photo
+                      </button>
+                      <button
+                        className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-black text-slate-600"
+                        onClick={() =>
+                          showMessage("Choose another uploaded thumbnail as the cover photo.")
+                        }
+                        type="button"
+                      >
+                        Choose Another
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-4 rounded-xl bg-slate-50 p-4 text-sm text-slate-600">
+                  <p className="font-bold text-[#082442]">
+                    Searching for property exterior...
+                  </p>
+                  <p className="mt-1">{summary.propertyHeroPhoto.reason}</p>
+                </div>
+              )}
+              <p className="mt-3 text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                Use This Photo or Choose Another with the cover button on any
+                uploaded thumbnail.
+              </p>
             </section>
 
             {photos.length > 0 && (
