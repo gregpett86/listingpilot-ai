@@ -4,16 +4,20 @@ import {
   calculateReadiness,
   chooseCoverPhoto,
   chooseInteriorPhoto,
+  isUsableImageDataUrl,
   inferRoomFromFilename,
   improvements,
   type UploadedPhoto,
 } from "./report-data";
 
+const validPngDataUrl =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=";
+
 function photo(id: string, roomLabel: UploadedPhoto["roomLabel"]): UploadedPhoto {
   return {
     id,
     name: `${id}.jpg`,
-    dataUrl: `data:image/jpeg;base64,${id}`,
+    dataUrl: validPngDataUrl,
     roomLabel,
   };
 }
@@ -62,6 +66,35 @@ describe("listing readiness report data", () => {
     expect(chooseCoverPhoto(photos)?.id).toBe("living");
   });
 
+  it("uses exterior as the cover when no explicit cover is designated", () => {
+    const photos = [
+      photo("kitchen", "Kitchen"),
+      photo("front", "Exterior"),
+      photo("back", "Backyard"),
+    ];
+
+    expect(chooseCoverPhoto(photos)?.id).toBe("front");
+  });
+
+  it("falls back to the first valid uploaded image when no cover or exterior exists", () => {
+    const photos = [
+      photo("living", "Living Room"),
+      photo("kitchen", "Kitchen"),
+    ];
+
+    expect(chooseCoverPhoto(photos)?.id).toBe("living");
+  });
+
+  it("ignores unusable uploaded image data for cover selection", () => {
+    const photos = [
+      { ...photo("broken", "Exterior"), dataUrl: "data:text/plain;base64,broken" },
+      photo("living", "Living Room"),
+    ];
+
+    expect(isUsableImageDataUrl(photos[0].dataUrl)).toBe(false);
+    expect(chooseCoverPhoto(photos)?.id).toBe("living");
+  });
+
   it("infers room labels from filenames", () => {
     expect(inferRoomFromFilename("front-exterior-01.jpg")).toBe("Exterior");
     expect(inferRoomFromFilename("bright-kitchen-island.jpg")).toBe("Kitchen");
@@ -76,6 +109,7 @@ describe("listing readiness report data", () => {
     );
 
     expect(summary.coverPhoto?.id).toBe("front");
+    expect(summary.photos).toHaveLength(2);
     expect(summary.executivePhoto?.id).toBe("kitchen");
     expect(summary.marketingPhoto?.id).toBe("kitchen");
     expect(summary.roomOverviews.find((room) => room.room === "Kitchen")?.photo?.id).toBe(

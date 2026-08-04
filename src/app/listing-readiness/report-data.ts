@@ -326,22 +326,34 @@ export function inferRoomFromFilename(name: string): RoomLabel {
   return "Other";
 }
 
+export function isUsableImageDataUrl(dataUrl: string) {
+  return /^data:image\/(png|jpe?g|webp);base64,[a-z0-9+/=]+$/i.test(dataUrl);
+}
+
+export function validUploadedPhotos(photos: UploadedPhoto[]) {
+  return photos.filter((photo) => isUsableImageDataUrl(photo.dataUrl));
+}
+
 export function chooseCoverPhoto(photos: UploadedPhoto[]) {
+  const validPhotos = validUploadedPhotos(photos);
+
   return (
-    photos.find((photo) => photo.isCoverPreferred && photo.roomLabel === "Exterior") ??
-    photos.find((photo) => photo.isCoverPreferred) ??
-    photos.find((photo) => photo.roomLabel === "Exterior") ??
-    photos.find((photo) => photo.roomLabel === "Backyard") ??
-    photos[0]
+    validPhotos.find((photo) => photo.isCoverPreferred && photo.roomLabel === "Exterior") ??
+    validPhotos.find((photo) => photo.isCoverPreferred) ??
+    validPhotos.find((photo) => photo.roomLabel === "Exterior") ??
+    validPhotos.find((photo) => photo.roomLabel === "Backyard") ??
+    validPhotos[0]
   );
 }
 
 export function chooseInteriorPhoto(photos: UploadedPhoto[]) {
+  const validPhotos = validUploadedPhotos(photos);
+
   return (
-    photos.find((photo) => photo.roomLabel === "Kitchen") ??
-    photos.find((photo) => photo.roomLabel === "Living Room") ??
-    photos.find((photo) => photo.roomLabel === "Primary Bedroom") ??
-    photos[0]
+    validPhotos.find((photo) => photo.roomLabel === "Kitchen") ??
+    validPhotos.find((photo) => photo.roomLabel === "Living Room") ??
+    validPhotos.find((photo) => photo.roomLabel === "Primary Bedroom") ??
+    validPhotos[0]
   );
 }
 
@@ -354,7 +366,8 @@ export function chooseStrongestPhoto(photos: UploadedPhoto[]) {
 }
 
 export function chooseMarketingPhoto(photos: UploadedPhoto[]) {
-  const coverPhoto = chooseCoverPhoto(photos);
+  const validPhotos = validUploadedPhotos(photos);
+  const coverPhoto = chooseCoverPhoto(validPhotos);
   const preferredRooms: RoomLabel[] = [
     "Backyard",
     "Living Room",
@@ -364,14 +377,14 @@ export function chooseMarketingPhoto(photos: UploadedPhoto[]) {
   ];
 
   for (const room of preferredRooms) {
-    const match = photos.find(
+    const match = validPhotos.find(
       (photo) => photo.roomLabel === room && photo.id !== coverPhoto?.id,
     );
 
     if (match) return match;
   }
 
-  return photos.find((photo) => photo.id !== coverPhoto?.id) ?? coverPhoto;
+  return validPhotos.find((photo) => photo.id !== coverPhoto?.id) ?? coverPhoto;
 }
 
 export function chooseSecondaryDetailRoom(roomOverviews: RoomOverview[]) {
@@ -417,7 +430,7 @@ export function buildRoomOverviews(
 
     return {
       room,
-      photo: photos.find((photo) => photo.roomLabel === room),
+      photo: validUploadedPhotos(photos).find((photo) => photo.roomLabel === room),
       current,
       potential,
       recommendations,
@@ -458,7 +471,7 @@ export function buildReadinessSummary(
     coverPhoto: chooseCoverPhoto(photos),
     executivePhoto: chooseInteriorPhoto(photos),
     strongestPhoto: chooseStrongestPhoto(photos),
-    kitchenPhoto: photos.find((photo) => photo.roomLabel === "Kitchen"),
+    kitchenPhoto: validUploadedPhotos(photos).find((photo) => photo.roomLabel === "Kitchen"),
     marketingPhoto: chooseMarketingPhoto(photos),
     secondaryDetailRoom: chooseSecondaryDetailRoom(roomOverviews),
   };

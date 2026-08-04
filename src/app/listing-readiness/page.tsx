@@ -26,6 +26,34 @@ function readFileAsDataUrl(file: File) {
   });
 }
 
+function loadImage(dataUrl: string) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new window.Image();
+
+    image.addEventListener("load", () => resolve(image));
+    image.addEventListener("error", () => reject(new Error("Image could not be loaded.")));
+    image.src = dataUrl;
+  });
+}
+
+async function readFileAsPdfImageDataUrl(file: File) {
+  const dataUrl = await readFileAsDataUrl(file);
+  const image = await loadImage(dataUrl);
+  const canvas = document.createElement("canvas");
+  canvas.width = image.naturalWidth || image.width;
+  canvas.height = image.naturalHeight || image.height;
+
+  const context = canvas.getContext("2d");
+  if (!context) {
+    throw new Error("Image could not be prepared for PDF.");
+  }
+
+  context.fillStyle = "#082442";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL("image/jpeg", 0.92);
+}
+
 function CheckIcon() {
   return <span aria-hidden="true">✓</span>;
 }
@@ -37,6 +65,7 @@ export default function ListingReadinessPage() {
   const [expanded, setExpanded] = useState<number | null>(null);
   const [showSetup, setShowSetup] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [isPreparingPhotos, setIsPreparingPhotos] = useState(false);
   const [photos, setPhotos] = useState<UploadedPhoto[]>([]);
   const [property, setProperty] = useState<PropertyDetails>(defaultProperty);
 
@@ -80,18 +109,26 @@ export default function ListingReadinessPage() {
       return;
     }
 
-    const uploadedPhotos = await Promise.all(
-      files.map(async (file) => ({
-        id: `${file.name}-${file.size}-${file.lastModified}-${crypto.randomUUID()}`,
-        isCoverPreferred: false,
-        name: file.name,
-        dataUrl: await readFileAsDataUrl(file),
-        roomLabel: inferRoomFromFilename(file.name),
-      })),
-    );
+    setIsPreparingPhotos(true);
 
-    setPhotos((currentPhotos) => [...currentPhotos, ...uploadedPhotos]);
-    event.target.value = "";
+    try {
+      const uploadedPhotos = await Promise.all(
+        files.map(async (file) => ({
+          id: `${file.name}-${file.size}-${file.lastModified}-${crypto.randomUUID()}`,
+          isCoverPreferred: false,
+          name: file.name,
+          dataUrl: await readFileAsPdfImageDataUrl(file),
+          roomLabel: inferRoomFromFilename(file.name),
+        })),
+      );
+
+      setPhotos((currentPhotos) => [...currentPhotos, ...uploadedPhotos]);
+    } catch {
+      showMessage("One or more photos could not be prepared for the PDF.");
+    } finally {
+      setIsPreparingPhotos(false);
+      event.target.value = "";
+    }
   }
 
   async function handleAgentHeadshotUpload(event: ChangeEvent<HTMLInputElement>) {
@@ -111,6 +148,11 @@ export default function ListingReadinessPage() {
   }
 
   function downloadReport() {
+    if (isPreparingPhotos) {
+      showMessage("Photos are still preparing for the PDF.");
+      return;
+    }
+
     downloadListingReadinessPdf(property, summary);
     showMessage("Luxury homeowner PDF downloaded.");
   }
@@ -195,10 +237,16 @@ export default function ListingReadinessPage() {
               <input
                 accept="image/*"
                 className="mt-3 block w-full text-sm"
+                disabled={isPreparingPhotos}
                 multiple
                 onChange={handlePhotoUpload}
                 type="file"
               />
+              {isPreparingPhotos && (
+                <span className="mt-2 block text-sm font-bold text-[#9a7100]">
+                  Preparing photos for the PDF...
+                </span>
+              )}
             </label>
 
             {photos.length > 0 && (
@@ -255,10 +303,11 @@ export default function ListingReadinessPage() {
               </button>
               <button
                 className="rounded-lg bg-[#082442] px-5 py-3 font-bold text-white"
+                disabled={isPreparingPhotos}
                 onClick={downloadReport}
                 type="button"
               >
-                Download Test PDF
+                {isPreparingPhotos ? "Preparing Photos..." : "Download Test PDF"}
               </button>
             </div>
           </div>
@@ -325,10 +374,11 @@ export default function ListingReadinessPage() {
               </button>
               <button
                 className="rounded-lg bg-[#082442] px-5 py-3 font-bold text-white"
+                disabled={isPreparingPhotos}
                 onClick={downloadReport}
                 type="button"
               >
-                Download Homeowner Report
+                {isPreparingPhotos ? "Preparing Photos..." : "Download Homeowner Report"}
               </button>
             </div>
           </header>
@@ -377,10 +427,11 @@ export default function ListingReadinessPage() {
                 </p>
                 <button
                   className="mt-4 rounded-lg border border-slate-400 px-4 py-2 text-sm font-bold"
+                  disabled={isPreparingPhotos}
                   onClick={downloadReport}
                   type="button"
                 >
-                  Download Full Report
+                  {isPreparingPhotos ? "Preparing Photos..." : "Download Full Report"}
                 </button>
               </div>
             </div>
@@ -486,10 +537,11 @@ export default function ListingReadinessPage() {
                 </div>
                 <button
                   className="rounded-lg bg-[#082442] px-5 py-3 font-bold text-white"
+                  disabled={isPreparingPhotos}
                   onClick={downloadReport}
                   type="button"
                 >
-                  Create PDF Report
+                  {isPreparingPhotos ? "Preparing Photos..." : "Create PDF Report"}
                 </button>
               </div>
             </div>
