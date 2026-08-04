@@ -94,6 +94,13 @@ export default function ListingReadinessPage() {
     event.target.value = "";
   }
 
+  async function handleAgentHeadshotUpload(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+
+    updatePropertyField("agentHeadshotDataUrl", file ? await readFileAsDataUrl(file) : "");
+    event.target.value = "";
+  }
+
   function markCoverPhoto(photoId: string) {
     setPhotos((currentPhotos) =>
       currentPhotos.map((photo) => ({
@@ -137,26 +144,47 @@ export default function ListingReadinessPage() {
             </div>
 
             <div className="mt-6 grid gap-4 md:grid-cols-2">
-              {(Object.keys(property) as Array<keyof PropertyDetails>).map((key) => (
-                <label
-                  className={
-                    key === "address" || key === "cityStateZip"
-                      ? "md:col-span-2"
-                      : ""
-                  }
-                  key={key}
-                >
-                  <span className="mb-1 block text-xs font-bold uppercase text-slate-500">
-                    {formatFieldLabel(key)}
-                  </span>
-                  <input
-                    className="w-full rounded-lg border border-slate-300 px-3 py-3 outline-none focus:border-[#d4a017]"
-                    onChange={(event) => updatePropertyField(key, event.target.value)}
-                    value={property[key]}
-                  />
-                </label>
-              ))}
+              {(Object.keys(property) as Array<keyof PropertyDetails>)
+                .filter((key) => key !== "agentHeadshotDataUrl")
+                .map((key) => (
+                  <label
+                    className={
+                      key === "address" || key === "cityStateZip"
+                        ? "md:col-span-2"
+                        : ""
+                    }
+                    key={key}
+                  >
+                    <span className="mb-1 block text-xs font-bold uppercase text-slate-500">
+                      {formatFieldLabel(key)}
+                    </span>
+                    <input
+                      className="w-full rounded-lg border border-slate-300 px-3 py-3 outline-none focus:border-[#d4a017]"
+                      onChange={(event) => updatePropertyField(key, event.target.value)}
+                      value={property[key]}
+                    />
+                  </label>
+                ))}
             </div>
+
+            <label className="mt-5 block rounded-xl border border-slate-200 bg-slate-50 p-5">
+              <span className="font-bold">Optional agent headshot</span>
+              <span className="mt-1 block text-sm text-slate-500">
+                Used on the PDF cover. If skipped, the cover uses an initials
+                avatar.
+              </span>
+              <input
+                accept="image/*"
+                className="mt-3 block w-full text-sm"
+                onChange={handleAgentHeadshotUpload}
+                type="file"
+              />
+              {property.agentHeadshotDataUrl && (
+                <span className="mt-2 block text-sm font-bold text-emerald-700">
+                  Headshot selected
+                </span>
+              )}
+            </label>
 
             <label className="mt-5 block rounded-xl border-2 border-dashed border-slate-300 p-5 text-center">
               <span className="font-bold">Upload property photos</span>

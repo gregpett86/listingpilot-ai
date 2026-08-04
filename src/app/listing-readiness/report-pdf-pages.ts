@@ -10,9 +10,9 @@ import {
   drawPhotoFrame,
   drawProgressBar,
   drawReportBadge,
-  drawScoreGauge,
   drawTitle,
   type PdfContext,
+  setDrawColor,
   setFillColor,
   setTextColor,
   textLines,
@@ -32,46 +32,258 @@ function recommendedForRoom(room: RoomOverview, selected: Improvement[]) {
   );
 }
 
+function readinessLabel(score: number) {
+  if (score >= 90) return "Strong Foundation";
+  if (score >= 80) return "Market Ready";
+  if (score >= 70) return "Nearly Ready";
+  return "Preparation Opportunity";
+}
+
+function agentInitials(property: PropertyDetails) {
+  return (
+    property.agentName
+      .split(" ")
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((name) => name[0]?.toUpperCase())
+      .join("") || "RE"
+  );
+}
+
+function drawBrandMark(ctx: PdfContext, x: number, y: number, color = pdfColors.white) {
+  const { doc } = ctx;
+  setTextColor(doc, color);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(7);
+  doc.text("REALTY", x, y, { align: "right" });
+  doc.text("EDGE PRO", x, y + 5, { align: "right" });
+  setDrawColor(doc, pdfColors.gold);
+  doc.setLineWidth(0.45);
+  doc.line(x - 23, y + 7.5, x, y + 7.5);
+}
+
+function drawFactIcon(ctx: PdfContext, kind: "beds" | "baths" | "sqft", x: number, y: number) {
+  const { doc } = ctx;
+  setDrawColor(doc, pdfColors.gold);
+  doc.setLineWidth(0.5);
+
+  if (kind === "beds") {
+    doc.rect(x, y - 2.5, 9, 4.5);
+    doc.line(x, y - 0.5, x + 9, y - 0.5);
+    doc.line(x + 1.5, y + 2, x + 1.5, y + 3.6);
+    doc.line(x + 7.5, y + 2, x + 7.5, y + 3.6);
+    return;
+  }
+
+  if (kind === "baths") {
+    doc.roundedRect(x, y - 2, 8.5, 4, 1, 1);
+    doc.line(x + 1, y + 2, x + 1, y + 3.2);
+    doc.line(x + 7.5, y + 2, x + 7.5, y + 3.2);
+    doc.circle(x + 7.4, y - 4, 0.8);
+    return;
+  }
+
+  doc.rect(x, y - 4, 8.5, 6);
+  doc.line(x, y - 1, x + 8.5, y - 1);
+  doc.line(x + 4.2, y - 4, x + 4.2, y + 2);
+}
+
+function drawFact(ctx: PdfContext, kind: "beds" | "baths" | "sqft", value: string, label: string, x: number, y: number) {
+  const { doc } = ctx;
+  drawFactIcon(ctx, kind, x, y);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8.5);
+  setTextColor(doc, pdfColors.white);
+  doc.text(value, x + 12, y);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(5.8);
+  setTextColor(doc, [180, 194, 211]);
+  doc.text(label.toUpperCase(), x + 12, y + 5);
+}
+
+function drawCoverScore(ctx: PdfContext, score: number, x: number, y: number) {
+  const { doc } = ctx;
+  setDrawColor(doc, pdfColors.goldSoft);
+  doc.setLineWidth(2.3);
+  doc.circle(x, y, 21, "S");
+  setDrawColor(doc, pdfColors.gold);
+  doc.setLineWidth(3.5);
+  doc.circle(x, y, 21, "S");
+  doc.setLineWidth(0.2);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(30);
+  setTextColor(doc, pdfColors.white);
+  doc.text(String(score), x, y - 1, { align: "center" });
+  doc.setFontSize(10);
+  setTextColor(doc, [204, 215, 228]);
+  doc.text("/100", x, y + 9, { align: "center" });
+  doc.setFontSize(6.5);
+  doc.setFont("helvetica", "bold");
+  setTextColor(doc, pdfColors.gold);
+  doc.text("CURRENT SCORE", x, y + 29, { align: "center" });
+  setTextColor(doc, pdfColors.white);
+  doc.text(readinessLabel(score).toUpperCase(), x, y + 37, { align: "center" });
+}
+
+function drawAgentAvatar(ctx: PdfContext, property: PropertyDetails, x: number, y: number) {
+  const { doc } = ctx;
+  if (property.agentHeadshotDataUrl) {
+    drawPhotoFrame(
+      doc,
+      {
+        dataUrl: property.agentHeadshotDataUrl,
+        id: "agent-headshot",
+        name: "Agent headshot",
+        roomLabel: "Other",
+      },
+      { x, y, w: 17, h: 17 },
+      { placeholder: "compact", radius: 8.5 },
+    );
+    return;
+  }
+
+  setFillColor(doc, pdfColors.goldSoft);
+  doc.circle(x + 8.5, y + 8.5, 8.5, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(7.5);
+  setTextColor(doc, pdfColors.navy);
+  doc.text(agentInitials(property), x + 8.5, y + 10.8, { align: "center" });
+}
+
+function drawCoverDisclaimer(ctx: PdfContext) {
+  const { doc } = ctx;
+  setFillColor(doc, [253, 250, 241]);
+  doc.rect(0, 200.5, pdfPage.width, 15.4, "F");
+  setDrawColor(doc, pdfColors.gold);
+  doc.setLineWidth(0.4);
+  doc.line(16, 200.5, pdfPage.width - 16, 200.5);
+  setDrawColor(doc, pdfColors.gold);
+  doc.line(20, 207.5, 24, 205.8);
+  doc.line(24, 205.8, 28, 207.5);
+  doc.line(20, 207.5, 20.8, 211.4);
+  doc.line(28, 207.5, 27.2, 211.4);
+  doc.line(20.8, 211.4, 24, 213.5);
+  doc.line(27.2, 211.4, 24, 213.5);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(6.1);
+  setTextColor(doc, pdfColors.slate);
+  doc.text(
+    textLines(
+      doc,
+      "This report is based on the photos and information provided and is intended for marketing preparation guidance only. It is not a home inspection, appraisal, or guarantee of sale price or market performance.",
+      218,
+    ),
+    34,
+    207.8,
+  );
+}
+
 export function PdfCover(ctx: PdfContext, property: PropertyDetails, summary: ReadinessSummary) {
   const { doc } = ctx;
   addReportPage(ctx);
+  const heroHeight = 126;
+  const panelY = 127.2;
+  const panelBottom = 200.5;
+  const opportunity = Math.max(0, summary.potentialScore - summary.currentScore);
 
   if (summary.coverPhoto) {
-    drawPhotoFrame(doc, summary.coverPhoto, { x: 0, y: 0, w: pdfPage.width, h: 142 }, { placeholder: "none" });
-    setFillColor(doc, pdfColors.navyDark);
-    doc.rect(0, 134, pdfPage.width, 82, "F");
+    drawPhotoFrame(
+      doc,
+      summary.coverPhoto,
+      { x: 0, y: 0, w: pdfPage.width, h: heroHeight },
+      { placeholder: "none" },
+    );
   } else {
-    setFillColor(doc, pdfColors.navyDark);
-    doc.rect(0, 0, pdfPage.width, pdfPage.height, "F");
     setFillColor(doc, pdfColors.navy);
-    doc.rect(0, 0, pdfPage.width, 112, "F");
+    doc.rect(0, 0, pdfPage.width, heroHeight, "F");
+    setFillColor(doc, pdfColors.navyDark);
+    doc.rect(0, 0, pdfPage.width, 55, "F");
     doc.setFont("helvetica", "bold");
     doc.setFontSize(12);
     setTextColor(doc, pdfColors.goldSoft);
-    doc.text("Property photography will appear here once uploaded.", pdfPage.margin, 88);
+    doc.text("Property photography will appear here once uploaded.", 18, 79);
   }
 
+  setFillColor(doc, [2, 10, 22]);
+  doc.rect(214, 16, 48, 20, "F");
+  drawBrandMark(ctx, 252, 25);
   setFillColor(doc, pdfColors.gold);
-  doc.rect(0, 134, pdfPage.width, 2.5, "F");
-  drawKicker(doc, "Realty Edge Pro", pdfPage.margin, 151, pdfColors.gold);
-  drawTitle(doc, "Listing Readiness Report", pdfPage.margin, 168, 28, pdfColors.white);
+  doc.rect(0, heroHeight, pdfPage.width, 1.2, "F");
+  setFillColor(doc, pdfColors.navyDark);
+  doc.rect(0, panelY, pdfPage.width, panelBottom - panelY, "F");
+
+  drawKicker(doc, "Listing Readiness", 16, 145, pdfColors.gold);
+  doc.setFont("times", "bold");
+  doc.setFontSize(34);
+  setTextColor(doc, pdfColors.white);
+  doc.text("REPORT", 16, 162);
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(10);
-  setTextColor(doc, [218, 225, 235]);
-  doc.text(`${property.address} | ${property.cityStateZip}`, pdfPage.margin, 179);
-  doc.text(`${property.beds} Beds | ${property.baths} Baths | ${property.sqft} Sq Ft`, pdfPage.margin, 187);
-  drawScoreGauge(doc, summary.currentScore, 215, 166);
-  drawMetric(doc, "Potential Score", `${summary.potentialScore}`, 249, 166, {
-    align: "center",
-    color: pdfColors.gold,
-  });
+  doc.setFontSize(8.4);
+  setTextColor(doc, [220, 228, 238]);
+  doc.text(textLines(doc, property.address, 68), 16, 174);
+  doc.setFontSize(7.2);
+  setTextColor(doc, [178, 193, 211]);
+  doc.text(property.cityStateZip, 16, 181);
+  drawFact(ctx, "beds", property.beds, "Beds", 16, 192);
+  drawFact(ctx, "baths", property.baths, "Baths", 43, 192);
+  drawFact(ctx, "sqft", property.sqft, "Sq Ft", 70, 192);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(5.8);
+  setTextColor(doc, pdfColors.gold);
+  doc.text("DATE PREPARED", 97, 189);
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(7.5);
-  setTextColor(doc, [205, 214, 226]);
-  doc.text(`Prepared for ${homeownerName(property)}`, pdfPage.margin, 200);
-  doc.text(`Prepared by ${property.agentName}, ${property.brokerage}`, 104, 200);
-  doc.text(`${property.agentPhone} | ${property.agentEmail}`, 104, 207);
-  doc.text(`Date prepared: ${ctx.preparedDate}`, pdfPage.margin, 207);
+  doc.setFontSize(7);
+  setTextColor(doc, [220, 228, 238]);
+  doc.text(ctx.preparedDate, 97, 196);
+
+  drawCoverScore(ctx, summary.currentScore, 136, 166);
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(20);
+  setTextColor(doc, pdfColors.white);
+  doc.text(`${summary.potentialScore}`, 176, 156, { align: "center" });
+  doc.setFontSize(7);
+  setTextColor(doc, [204, 215, 228]);
+  doc.text("/100", 187, 156, { align: "left" });
+  doc.setFontSize(6);
+  setTextColor(doc, pdfColors.gold);
+  doc.text("POTENTIAL SCORE", 176, 176, { align: "center" });
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(6.4);
+  setTextColor(doc, [180, 194, 211]);
+  doc.text("Points of Opportunity", 176, 185, { align: "center" });
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(13);
+  setTextColor(doc, opportunity > 0 ? pdfColors.positive : pdfColors.gold);
+  doc.text(`+${opportunity}`, 176, 195, { align: "center" });
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(5.8);
+  setTextColor(doc, pdfColors.gold);
+  doc.text("PREPARED FOR", 205, 144);
+  doc.setFontSize(8.5);
+  setTextColor(doc, pdfColors.white);
+  doc.text(textLines(doc, homeownerName(property), 58), 205, 153);
+  doc.setFontSize(5.8);
+  setTextColor(doc, pdfColors.gold);
+  doc.text("PREPARED BY", 205, 166);
+  drawAgentAvatar(ctx, property, 205, 171);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(7.6);
+  setTextColor(doc, pdfColors.white);
+  doc.text(textLines(doc, property.agentName, 48), 226, 174);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(6.2);
+  setTextColor(doc, [184, 198, 214]);
+  doc.text("Real Estate Professional", 226, 181);
+  doc.text(textLines(doc, property.brokerage, 48), 226, 187);
+  doc.text(property.agentPhone, 205, 193);
+  doc.text(textLines(doc, property.agentEmail, 32), 226, 193);
+  if (property.agentWebsite.trim()) {
+    doc.text(textLines(doc, property.agentWebsite.trim(), 32), 205, 198);
+  }
+  drawBrandMark(ctx, 263, 188, pdfColors.gold);
+  drawCoverDisclaimer(ctx);
 }
 
 export function PdfExecutiveSummary(ctx: PdfContext, property: PropertyDetails, summary: ReadinessSummary) {

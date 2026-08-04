@@ -24,6 +24,8 @@ export type PropertyDetails = {
   brokerage: string;
   agentPhone: string;
   agentEmail: string;
+  agentWebsite: string;
+  agentHeadshotDataUrl: string;
 };
 
 export type UploadedPhoto = {
@@ -244,6 +246,8 @@ export const defaultProperty: PropertyDetails = {
   brokerage: "Realty Edge Pro",
   agentPhone: "(555) 123-4567",
   agentEmail: "agent@example.com",
+  agentWebsite: "realtyedgepro.com",
+  agentHeadshotDataUrl: "",
 };
 
 const roomBaseScores: Record<RoomLabel, number> = {
@@ -270,6 +274,8 @@ export function formatFieldLabel(key: keyof PropertyDetails) {
     brokerage: "Brokerage",
     agentPhone: "Agent Phone",
     agentEmail: "Agent Email",
+    agentWebsite: "Website",
+    agentHeadshotDataUrl: "Agent Headshot",
   };
 
   return labels[key];
