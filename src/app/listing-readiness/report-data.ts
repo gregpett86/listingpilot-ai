@@ -28,6 +28,7 @@ export type PropertyDetails = {
 
 export type UploadedPhoto = {
   id: string;
+  isCoverPreferred?: boolean;
   name: string;
   dataUrl: string;
   roomLabel: RoomLabel;
@@ -70,9 +71,13 @@ export type ReadinessSummary = {
   selectedRecommendations: Improvement[];
   categoryScores: CategoryScore[];
   roomOverviews: RoomOverview[];
+  photos: UploadedPhoto[];
   coverPhoto?: UploadedPhoto;
   executivePhoto?: UploadedPhoto;
   strongestPhoto?: UploadedPhoto;
+  kitchenPhoto?: UploadedPhoto;
+  marketingPhoto?: UploadedPhoto;
+  secondaryDetailRoom?: RoomOverview;
 };
 
 export const baseScore = 62;
@@ -317,6 +322,8 @@ export function inferRoomFromFilename(name: string): RoomLabel {
 
 export function chooseCoverPhoto(photos: UploadedPhoto[]) {
   return (
+    photos.find((photo) => photo.isCoverPreferred && photo.roomLabel === "Exterior") ??
+    photos.find((photo) => photo.isCoverPreferred) ??
     photos.find((photo) => photo.roomLabel === "Exterior") ??
     photos.find((photo) => photo.roomLabel === "Backyard") ??
     photos[0]
@@ -337,6 +344,45 @@ export function chooseStrongestPhoto(photos: UploadedPhoto[]) {
     photos.find((photo) => photo.roomLabel === "Kitchen") ??
     chooseCoverPhoto(photos) ??
     chooseInteriorPhoto(photos)
+  );
+}
+
+export function chooseMarketingPhoto(photos: UploadedPhoto[]) {
+  const coverPhoto = chooseCoverPhoto(photos);
+  const preferredRooms: RoomLabel[] = [
+    "Backyard",
+    "Living Room",
+    "Primary Bedroom",
+    "Kitchen",
+    "Exterior",
+  ];
+
+  for (const room of preferredRooms) {
+    const match = photos.find(
+      (photo) => photo.roomLabel === room && photo.id !== coverPhoto?.id,
+    );
+
+    if (match) return match;
+  }
+
+  return photos.find((photo) => photo.id !== coverPhoto?.id) ?? coverPhoto;
+}
+
+export function chooseSecondaryDetailRoom(roomOverviews: RoomOverview[]) {
+  return (
+    roomOverviews.find(
+      (room) => room.room === "Primary Bathroom" && room.photo,
+    ) ??
+    roomOverviews.find(
+      (room) => room.room === "Primary Bedroom" && room.photo,
+    ) ??
+    roomOverviews.find(
+      (room) => room.room === "Living Room" && room.photo,
+    ) ??
+    roomOverviews.find((room) => room.photo && room.room !== "Kitchen") ??
+    roomOverviews.find((room) => room.room === "Primary Bathroom") ??
+    roomOverviews.find((room) => room.room !== "Kitchen") ??
+    roomOverviews[0]
   );
 }
 
@@ -382,6 +428,10 @@ export function buildReadinessSummary(
   photos: UploadedPhoto[],
 ): ReadinessSummary {
   const readiness = calculateReadiness(selectedIds);
+  const roomOverviews = buildRoomOverviews(
+    photos,
+    readiness.selectedRecommendations,
+  );
   const categoryScores = baseCategories.map((category) => {
     const selectedCategoryPoints = readiness.selectedRecommendations
       .filter((item) => item.category === category.name)
@@ -397,9 +447,13 @@ export function buildReadinessSummary(
     baseScore,
     ...readiness,
     categoryScores,
-    roomOverviews: buildRoomOverviews(photos, readiness.selectedRecommendations),
+    roomOverviews,
+    photos,
     coverPhoto: chooseCoverPhoto(photos),
     executivePhoto: chooseInteriorPhoto(photos),
     strongestPhoto: chooseStrongestPhoto(photos),
+    kitchenPhoto: photos.find((photo) => photo.roomLabel === "Kitchen"),
+    marketingPhoto: chooseMarketingPhoto(photos),
+    secondaryDetailRoom: chooseSecondaryDetailRoom(roomOverviews),
   };
 }

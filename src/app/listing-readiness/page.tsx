@@ -83,6 +83,7 @@ export default function ListingReadinessPage() {
     const uploadedPhotos = await Promise.all(
       files.map(async (file) => ({
         id: `${file.name}-${file.size}-${file.lastModified}-${crypto.randomUUID()}`,
+        isCoverPreferred: false,
         name: file.name,
         dataUrl: await readFileAsDataUrl(file),
         roomLabel: inferRoomFromFilename(file.name),
@@ -91,6 +92,15 @@ export default function ListingReadinessPage() {
 
     setPhotos((currentPhotos) => [...currentPhotos, ...uploadedPhotos]);
     event.target.value = "";
+  }
+
+  function markCoverPhoto(photoId: string) {
+    setPhotos((currentPhotos) =>
+      currentPhotos.map((photo) => ({
+        ...photo,
+        isCoverPreferred: photo.id === photoId,
+      })),
+    );
   }
 
   function downloadReport() {
@@ -191,6 +201,17 @@ export default function ListingReadinessPage() {
                         ))}
                       </select>
                     </label>
+                    <button
+                      className={`mt-3 w-full rounded-lg border px-3 py-2 text-sm font-black ${
+                        photo.isCoverPreferred
+                          ? "border-[#D4A017] bg-[#f7edd1] text-[#9a7100]"
+                          : "border-slate-300 bg-white text-slate-600"
+                      }`}
+                      onClick={() => markCoverPhoto(photo.id)}
+                      type="button"
+                    >
+                      {photo.isCoverPreferred ? "Cover photo selected" : "Use as cover photo"}
+                    </button>
                   </div>
                 ))}
               </div>

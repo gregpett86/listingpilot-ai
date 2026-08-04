@@ -2,15 +2,24 @@
 
 :root {
   --gold: #d4a017;
+  --realty-edge-gold: #d4a017;
+  --realty-edge-gold-dark: #9a7100;
+  --realty-edge-gold-soft: #f7edd1;
   --gold-glow: rgba(212, 160, 23, 0.18);
   --navy: #1b2238;
   --navy-dark: #0b1437;
+  --realty-edge-navy: #082442;
+  --realty-edge-navy-dark: #04182d;
+  --realty-edge-navy-soft: #eef3f8;
   --bg: #f0f2f8;
   --surface: #ffffff;
   --border: #e5e7eb;
   --foreground: #111827;
   --muted: #6b7280;
   --muted-light: #9ca3af;
+  --realty-edge-positive: #128b53;
+  --realty-edge-card-shadow: 0 14px 34px rgba(8, 36, 66, 0.08);
+  --realty-edge-card-shadow-hover: 0 20px 44px rgba(8, 36, 66, 0.13);
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-io: cubic-bezier(0.77, 0, 0.175, 1);
 }
@@ -25,6 +34,11 @@
   --color-navy-800: #0f2040;
   --color-navy-700: #112240;
   --color-navy-600: #1a3358;
+  --color-realty-navy: var(--realty-edge-navy);
+  --color-realty-navy-dark: var(--realty-edge-navy-dark);
+  --color-realty-gold: var(--realty-edge-gold);
+  --color-realty-gold-soft: var(--realty-edge-gold-soft);
+  --color-realty-positive: var(--realty-edge-positive);
   --color-gold-primary: #d4a017;
   --color-gold-300: #fcd34d;
   --color-gold-400: #fbbf24;
@@ -61,6 +75,17 @@ body {
     box-shadow: 0 0 0 3px var(--gold-glow);
     outline: none;
   }
+
+  .rep-luxury-card {
+    border: 1px solid rgba(8, 36, 66, 0.1);
+    border-radius: 14px;
+    background: var(--surface);
+    box-shadow: var(--realty-edge-card-shadow);
+  }
+
+  .rep-section-pad {
+    padding: 24px;
+  }
 }
 
 @layer utilities {
@@ -88,6 +113,33 @@ body {
 
   .card-shadow {
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  }
+
+  .rep-heading {
+    color: var(--realty-edge-navy);
+    font-weight: 900;
+    letter-spacing: 0;
+  }
+
+  .rep-body {
+    color: var(--muted);
+    font-size: 14px;
+    line-height: 1.65;
+  }
+
+  .rep-label {
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .rep-metric {
+    color: var(--realty-edge-navy);
+    font-variant-numeric: tabular-nums;
+    font-weight: 900;
+    letter-spacing: 0;
   }
 
   .hover-lift {

@@ -51,6 +51,17 @@ describe("listing readiness report data", () => {
     expect(chooseInteriorPhoto(photos)?.id).toBe("kitchen");
   });
 
+  it("honors an explicitly selected cover photo", () => {
+    const selectedCover = photo("living", "Living Room");
+    const photos = [
+      photo("front", "Exterior"),
+      { ...selectedCover, isCoverPreferred: true },
+      photo("kitchen", "Kitchen"),
+    ];
+
+    expect(chooseCoverPhoto(photos)?.id).toBe("living");
+  });
+
   it("infers room labels from filenames", () => {
     expect(inferRoomFromFilename("front-exterior-01.jpg")).toBe("Exterior");
     expect(inferRoomFromFilename("bright-kitchen-island.jpg")).toBe("Kitchen");
@@ -66,6 +77,7 @@ describe("listing readiness report data", () => {
 
     expect(summary.coverPhoto?.id).toBe("front");
     expect(summary.executivePhoto?.id).toBe("kitchen");
+    expect(summary.marketingPhoto?.id).toBe("kitchen");
     expect(summary.roomOverviews.find((room) => room.room === "Kitchen")?.photo?.id).toBe(
       "kitchen",
     );
