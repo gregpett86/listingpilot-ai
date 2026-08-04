@@ -2,174 +2,19 @@
 
 import Image from "next/image";
 import { ChangeEvent, useMemo, useState } from "react";
-import { jsPDF } from "jspdf";
-
-type Difficulty = "Very Easy" | "Easy" | "Medium";
-
-type Improvement = {
-  id: number;
-  room: string;
-  title: string;
-  description: string;
-  points: number;
-  difficulty: Difficulty;
-  time: string;
-  category: string;
-  reasons: string[];
-};
-
-type PropertyDetails = {
-  address: string;
-  cityStateZip: string;
-  beds: string;
-  baths: string;
-  sqft: string;
-  agentName: string;
-  brokerage: string;
-};
-
-type UploadedPhoto = {
-  id: string;
-  name: string;
-  dataUrl: string;
-};
-
-const baseScore = 62;
-
-const improvements: Improvement[] = [
-  {
-    id: 1,
-    room: "Living Room",
-    title: "Fresh Interior Paint",
-    description:
-      "Use a warm neutral paint color to brighten the room and create a cleaner first impression.",
-    points: 8,
-    difficulty: "Easy",
-    time: "1-2 days",
-    category: "Interior Appeal",
-    reasons: [
-      "Dark wall color absorbs natural light",
-      "Neutral paint photographs better",
-      "Creates broader buyer appeal",
-    ],
-  },
-  {
-    id: 2,
-    room: "Dining Room",
-    title: "Upgrade Light Fixtures",
-    description:
-      "Replace the dated fixture with a simple modern design that better matches the updated finishes.",
-    points: 4,
-    difficulty: "Easy",
-    time: "2-3 hours",
-    category: "Modernization",
-    reasons: [
-      "Existing fixture appears dated",
-      "Modern lighting creates a stronger focal point",
-      "Improves listing photography",
-    ],
-  },
-  {
-    id: 3,
-    room: "Whole Home",
-    title: "Declutter and Depersonalize",
-    description:
-      "Remove excess decor and personal items so buyers can focus on the space rather than the belongings.",
-    points: 3,
-    difficulty: "Very Easy",
-    time: "3-4 hours",
-    category: "Photo Readiness",
-    reasons: [
-      "Several surfaces appear visually busy",
-      "Cleaner spaces feel larger",
-      "Helps buyers picture themselves in the home",
-    ],
-  },
-  {
-    id: 4,
-    room: "Exterior",
-    title: "Power Wash Exterior",
-    description:
-      "Clean the front walk, driveway, and entry surfaces to sharpen curb appeal before photography.",
-    points: 2,
-    difficulty: "Easy",
-    time: "2-4 hours",
-    category: "Curb Appeal",
-    reasons: [
-      "Walkway shows visible discoloration",
-      "Entry photos shape first impressions",
-      "Low-effort curb appeal improvement",
-    ],
-  },
-  {
-    id: 5,
-    room: "Primary Bedroom",
-    title: "Stage Primary Bedroom",
-    description:
-      "Simplify furniture placement and use lighter bedding to make the room feel larger and more restful.",
-    points: 4,
-    difficulty: "Medium",
-    time: "Half day",
-    category: "Buyer Appeal",
-    reasons: [
-      "Furniture placement reduces visible floor area",
-      "Lighter bedding improves photography",
-      "A calm primary suite supports buyer emotion",
-    ],
-  },
-];
-
-const baseCategories = [
-  { name: "Curb Appeal", score: 68, potential: 85 },
-  { name: "Interior Appeal", score: 74, potential: 92 },
-  { name: "Modernization", score: 63, potential: 81 },
-  { name: "Buyer Appeal", score: 79, potential: 95 },
-  { name: "Photo Readiness", score: 70, potential: 94 },
-];
-
-const marketingHighlights = [
-  "Open floor plan",
-  "Natural light",
-  "Updated kitchen",
-  "Hardwood floors",
-  "Strong curb appeal",
-  "Spacious primary suite",
-];
-
-const defaultProperty: PropertyDetails = {
-  address: "1234 Oak Ridge Drive",
-  cityStateZip: "Dallas, TX 75230",
-  beds: "5",
-  baths: "3",
-  sqft: "2,842",
-  agentName: "Your Real Estate Professional",
-  brokerage: "Realty Edge Pro",
-};
-
-function formatKey(key: string) {
-  if (key === "address") {
-    return "Property Address";
-  }
-
-  if (key === "cityStateZip") {
-    return "City/State/ZIP";
-  }
-
-  if (key === "sqft") {
-    return "Square Feet";
-  }
-
-  return key.replace(/([A-Z])/g, " $1").replace(/^./, (value) => value.toUpperCase());
-}
-
-function safeFilename(address: string) {
-  return (
-    address
-      .replace(/[^a-z0-9]+/gi, "-")
-      .replace(/^-|-$/g, "")
-      .toLowerCase() || "property"
-  );
-}
+import {
+  buildReadinessSummary,
+  defaultProperty,
+  formatFieldLabel,
+  improvements,
+  inferRoomFromFilename,
+  marketingHighlights,
+  type PropertyDetails,
+  roomLabels,
+  type RoomLabel,
+  type UploadedPhoto,
+} from "./report-data";
+import { downloadListingReadinessPdf } from "./report-pdf";
 
 function readFileAsDataUrl(file: File) {
   return new Promise<string>((resolve, reject) => {
@@ -181,24 +26,8 @@ function readFileAsDataUrl(file: File) {
   });
 }
 
-function addWrappedText({
-  doc,
-  maxWidth,
-  text,
-  x,
-  y,
-}: {
-  doc: jsPDF;
-  maxWidth: number;
-  text: string;
-  x: number;
-  y: number;
-}) {
-  const lines = doc.splitTextToSize(text, maxWidth) as string[];
-
-  doc.text(lines, x, y);
-
-  return y + lines.length * 5 + 3;
+function CheckIcon() {
+  return <span aria-hidden="true">✓</span>;
 }
 
 export default function ListingReadinessPage() {
@@ -211,28 +40,10 @@ export default function ListingReadinessPage() {
   const [photos, setPhotos] = useState<UploadedPhoto[]>([]);
   const [property, setProperty] = useState<PropertyDetails>(defaultProperty);
 
-  const selectedRecommendations = useMemo(
-    () => improvements.filter((item) => selected.includes(item.id)),
-    [selected],
+  const summary = useMemo(
+    () => buildReadinessSummary(selected, photos),
+    [photos, selected],
   );
-  const selectedPoints = selectedRecommendations.reduce(
-    (sum, item) => sum + item.points,
-    0,
-  );
-  const allPoints = improvements.reduce((sum, item) => sum + item.points, 0);
-  const currentScore = Math.min(100, baseScore + selectedPoints);
-  const potentialScore = Math.min(100, baseScore + allPoints);
-  const coverPhoto = photos[0];
-  const categoryScores = baseCategories.map((category) => {
-    const selectedCategoryPoints = selectedRecommendations
-      .filter((item) => item.category === category.name)
-      .reduce((sum, item) => sum + item.points, 0);
-
-    return {
-      ...category,
-      current: Math.min(category.potential, category.score + selectedCategoryPoints),
-    };
-  });
 
   function showMessage(message: string) {
     setNotice(message);
@@ -254,6 +65,14 @@ export default function ListingReadinessPage() {
     }));
   }
 
+  function updatePhotoRoom(photoId: string, roomLabel: RoomLabel) {
+    setPhotos((currentPhotos) =>
+      currentPhotos.map((photo) =>
+        photo.id === photoId ? { ...photo, roomLabel } : photo,
+      ),
+    );
+  }
+
   async function handlePhotoUpload(event: ChangeEvent<HTMLInputElement>) {
     const files = Array.from(event.target.files ?? []);
 
@@ -263,9 +82,10 @@ export default function ListingReadinessPage() {
 
     const uploadedPhotos = await Promise.all(
       files.map(async (file) => ({
-        id: `${file.name}-${file.size}-${file.lastModified}`,
+        id: `${file.name}-${file.size}-${file.lastModified}-${crypto.randomUUID()}`,
         name: file.name,
         dataUrl: await readFileAsDataUrl(file),
+        roomLabel: inferRoomFromFilename(file.name),
       })),
     );
 
@@ -274,154 +94,8 @@ export default function ListingReadinessPage() {
   }
 
   function downloadReport() {
-    const doc = new jsPDF({ unit: "mm", format: "letter" });
-    const navy: [number, number, number] = [8, 36, 66];
-    const gold: [number, number, number] = [228, 170, 36];
-    const gray: [number, number, number] = [82, 96, 116];
-    const margin = 18;
-    const contentWidth = 180;
-    let y = 22;
-
-    const ensureSpace = (needed = 24) => {
-      if (y + needed <= 260) {
-        return;
-      }
-
-      doc.addPage();
-      y = 22;
-    };
-
-    const addSectionTitle = (title: string) => {
-      ensureSpace(18);
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(14);
-      doc.setTextColor(...navy);
-      doc.text(title, margin, y);
-      doc.setDrawColor(...gold);
-      doc.line(margin, y + 2, margin + 44, y + 2);
-      y += 10;
-    };
-
-    const addParagraph = (text: string, size = 10) => {
-      ensureSpace(18);
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(size);
-      doc.setTextColor(...gray);
-      y = addWrappedText({
-        doc,
-        maxWidth: contentWidth,
-        text,
-        x: margin,
-        y,
-      });
-    };
-
-    doc.setFillColor(...navy);
-    doc.rect(0, 0, 216, 58, "F");
-    doc.setFillColor(...gold);
-    doc.rect(0, 58, 216, 2, "F");
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(22);
-    doc.text("Homeowner Listing Readiness Report", margin, 23);
-    doc.setFontSize(11);
-    doc.text("Marketing preparation guidance from ListingPilot AI", margin, 32);
-    doc.setFontSize(16);
-    doc.text(property.address, margin, 47);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(10);
-    doc.text(property.cityStateZip, margin, 53);
-
-    if (coverPhoto?.dataUrl) {
-      try {
-        doc.addImage(coverPhoto.dataUrl, "JPEG", 122, 70, 70, 48);
-      } catch {
-        try {
-          doc.addImage(coverPhoto.dataUrl, "PNG", 122, 70, 70, 48);
-        } catch {
-          // The PDF should still download if a browser-provided image cannot be embedded.
-        }
-      }
-    }
-
-    y = 74;
-    doc.setTextColor(...navy);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(12);
-    doc.text("Property Snapshot", margin, y);
-    y += 8;
-    addParagraph(
-      `${property.beds} beds | ${property.baths} baths | ${property.sqft} square feet`,
-    );
-    addParagraph(`Prepared by ${property.agentName}, ${property.brokerage}.`);
-
-    y = Math.max(y, 130);
-    doc.setFillColor(247, 248, 251);
-    doc.roundedRect(margin, y, contentWidth, 36, 3, 3, "F");
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(10);
-    doc.setTextColor(...navy);
-    doc.text("CURRENT LISTING READINESS SCORE", margin + 8, y + 10);
-    doc.setFontSize(24);
-    doc.text(`${currentScore}/100`, margin + 8, y + 26);
-    doc.setFontSize(10);
-    doc.text("POTENTIAL SCORE", margin + 98, y + 10);
-    doc.setTextColor(18, 139, 83);
-    doc.setFontSize(24);
-    doc.text(`${potentialScore}/100`, margin + 98, y + 26);
-    y += 50;
-
-    addSectionTitle("Category Scores");
-    categoryScores.forEach((category) => {
-      addParagraph(
-        `${category.name}: ${category.current}/100 | Potential: ${category.potential}/100`,
-      );
-    });
-
-    addSectionTitle("Selected Recommendations");
-    if (selectedRecommendations.length === 0) {
-      addParagraph("No recommendations were selected for this homeowner report.");
-    } else {
-      selectedRecommendations.forEach((item, index) => {
-        ensureSpace(24);
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(11);
-        doc.setTextColor(...navy);
-        doc.text(`${index + 1}. ${item.title} (${item.room})`, margin, y);
-        y += 6;
-        addParagraph(
-          `${item.description} Score impact: +${item.points} points. Difficulty: ${item.difficulty}. Estimated time: ${item.time}.`,
-        );
-      });
-    }
-
-    addSectionTitle("Marketing Highlights");
-    marketingHighlights.forEach((highlight) => {
-      addParagraph(`- ${highlight}`);
-    });
-
-    addSectionTitle("Next Steps");
-    addParagraph("1. Confirm which selected preparation items will be completed before photography.");
-    addParagraph("2. Schedule fresh listing photos after the visual preparation work is complete.");
-    addParagraph("3. Lead marketing with the strongest rooms, curb appeal, and lifestyle features.");
-
-    addSectionTitle("Important Disclaimer");
-    addParagraph(
-      "This report is marketing-preparation guidance only. It is not a home inspection, engineering report, appraisal, valuation, or guarantee of sale price or market performance.",
-      8,
-    );
-
-    const pages = doc.getNumberOfPages();
-
-    for (let page = 1; page <= pages; page += 1) {
-      doc.setPage(page);
-      doc.setFontSize(8);
-      doc.setTextColor(140, 150, 165);
-      doc.text(`Page ${page} of ${pages}`, 178, 270);
-    }
-
-    doc.save(`${safeFilename(property.address)}-listing-readiness-report.pdf`);
-    showMessage("Homeowner PDF downloaded.");
+    downloadListingReadinessPdf(property, summary);
+    showMessage("Luxury homeowner PDF downloaded.");
   }
 
   return (
@@ -434,13 +108,13 @@ export default function ListingReadinessPage() {
 
       {showSetup && (
         <div className="fixed inset-0 z-40 grid place-items-center bg-slate-950/60 p-4">
-          <div className="max-h-[90vh] w-full max-w-3xl overflow-auto rounded-2xl bg-white p-6 shadow-2xl">
+          <div className="max-h-[90vh] w-full max-w-5xl overflow-auto rounded-2xl bg-white p-6 shadow-2xl">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h2 className="text-2xl font-black">Test Another Property</h2>
                 <p className="mt-1 text-sm text-slate-500">
-                  Enter homeowner-facing property details and upload property
-                  photos for the report cover and preview area.
+                  Enter homeowner-facing details, upload property photos, and
+                  label each room for the luxury PDF report.
                 </p>
               </div>
               <button
@@ -455,11 +129,15 @@ export default function ListingReadinessPage() {
             <div className="mt-6 grid gap-4 md:grid-cols-2">
               {(Object.keys(property) as Array<keyof PropertyDetails>).map((key) => (
                 <label
-                  className={key === "address" || key === "cityStateZip" ? "md:col-span-2" : ""}
+                  className={
+                    key === "address" || key === "cityStateZip"
+                      ? "md:col-span-2"
+                      : ""
+                  }
                   key={key}
                 >
                   <span className="mb-1 block text-xs font-bold uppercase text-slate-500">
-                    {formatKey(key)}
+                    {formatFieldLabel(key)}
                   </span>
                   <input
                     className="w-full rounded-lg border border-slate-300 px-3 py-3 outline-none focus:border-[#d4a017]"
@@ -473,7 +151,8 @@ export default function ListingReadinessPage() {
             <label className="mt-5 block rounded-xl border-2 border-dashed border-slate-300 p-5 text-center">
               <span className="font-bold">Upload property photos</span>
               <span className="mt-1 block text-sm text-slate-500">
-                The first uploaded photo is used as the report cover image.
+                Upload multiple photos, then assign each one to the correct
+                room. Exterior photos are prioritized for the cover.
               </span>
               <input
                 accept="image/*"
@@ -485,15 +164,34 @@ export default function ListingReadinessPage() {
             </label>
 
             {photos.length > 0 && (
-              <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
+              <div className="mt-4 grid grid-cols-2 gap-4 md:grid-cols-3">
                 {photos.map((photo) => (
-                  <div
-                    aria-label={photo.name}
-                    className="aspect-[4/3] rounded-xl bg-cover bg-center"
-                    key={photo.id}
-                    role="img"
-                    style={{ backgroundImage: `url(${photo.dataUrl})` }}
-                  />
+                  <div className="rounded-xl border bg-slate-50 p-3" key={photo.id}>
+                    <div
+                      aria-label={photo.name}
+                      className="aspect-[4/3] rounded-lg bg-cover bg-center"
+                      role="img"
+                      style={{ backgroundImage: `url(${photo.dataUrl})` }}
+                    />
+                    <label className="mt-3 block">
+                      <span className="mb-1 block text-xs font-bold uppercase text-slate-500">
+                        Room label
+                      </span>
+                      <select
+                        className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                        onChange={(event) =>
+                          updatePhotoRoom(photo.id, event.target.value as RoomLabel)
+                        }
+                        value={photo.roomLabel}
+                      >
+                        {roomLabels.map((room) => (
+                          <option key={room} value={room}>
+                            {room}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
                 ))}
               </div>
             )}
@@ -588,17 +286,18 @@ export default function ListingReadinessPage() {
 
           <div className="mb-5 grid overflow-hidden rounded-2xl border bg-white shadow-sm lg:grid-cols-2">
             <div className="flex flex-col gap-5 p-5 sm:flex-row">
-              <div
-                aria-label={property.address}
-                className="h-40 w-full rounded-xl bg-cover bg-center sm:w-60"
-                role="img"
-                style={{
-                  backgroundImage: `url(${
-                    coverPhoto?.dataUrl ??
-                    "https://images.unsplash.com/photo-1564013799919-ab600027ffc6?auto=format&fit=crop&w=1200&q=85"
-                  })`,
-                }}
-              />
+              {summary.coverPhoto ? (
+                <div
+                  aria-label={property.address}
+                  className="h-40 w-full rounded-xl bg-cover bg-center sm:w-60"
+                  role="img"
+                  style={{ backgroundImage: `url(${summary.coverPhoto.dataUrl})` }}
+                />
+              ) : (
+                <div className="grid h-40 w-full place-items-center rounded-xl bg-slate-100 text-sm font-bold text-slate-500 sm:w-60">
+                  Photo not provided
+                </div>
+              )}
               <div className="self-center">
                 <h2 className="text-xl font-black">{property.address}</h2>
                 <p className="mt-1 text-slate-500">{property.cityStateZip}</p>
@@ -611,7 +310,7 @@ export default function ListingReadinessPage() {
             <div className="flex items-center gap-7 border-t p-6 lg:border-l lg:border-t-0">
               <div className="grid h-32 w-32 shrink-0 place-items-center rounded-full border-[10px] border-[#e4aa24]">
                 <div className="text-center">
-                  <div className="text-4xl font-black">{currentScore}</div>
+                  <div className="text-4xl font-black">{summary.currentScore}</div>
                   <div className="text-xs text-slate-500">/100</div>
                 </div>
               </div>
@@ -623,7 +322,7 @@ export default function ListingReadinessPage() {
                   The score updates as recommendations are selected or removed.
                   Potential score:{" "}
                   <span className="font-black text-emerald-700">
-                    {potentialScore}/100
+                    {summary.potentialScore}/100
                   </span>
                   .
                 </p>
@@ -639,7 +338,7 @@ export default function ListingReadinessPage() {
           </div>
 
           <div className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-5">
-            {categoryScores.map((category) => (
+            {summary.categoryScores.map((category) => (
               <div
                 className="rounded-2xl border bg-white p-4 text-center shadow-sm"
                 key={category.name}
@@ -684,7 +383,7 @@ export default function ListingReadinessPage() {
                           onClick={() => toggleRecommendation(item.id)}
                           type="button"
                         >
-                          {active ? "✓" : index + 1}
+                          {active ? <CheckIcon /> : index + 1}
                         </button>
                         <button
                           className="text-left"
@@ -710,7 +409,9 @@ export default function ListingReadinessPage() {
                           <strong>Why recommended:</strong>
                           <ul className="mt-2 space-y-1">
                             {item.reasons.map((reason) => (
-                              <li key={reason}>✓ {reason}</li>
+                              <li key={reason}>
+                                <CheckIcon /> {reason}
+                              </li>
                             ))}
                           </ul>
                           <p className="mt-3">
@@ -728,8 +429,10 @@ export default function ListingReadinessPage() {
                     Selected readiness
                   </div>
                   <div className="text-3xl font-black">
-                    {baseScore} →{" "}
-                    <span className="text-emerald-600">{currentScore}</span>
+                    {summary.baseScore} -&gt;{" "}
+                    <span className="text-emerald-600">
+                      {summary.currentScore}
+                    </span>
                   </div>
                 </div>
                 <button
@@ -744,37 +447,30 @@ export default function ListingReadinessPage() {
 
             <aside className="space-y-5">
               <div className="rounded-2xl border bg-white p-5 shadow-sm">
-                <h3 className="font-black">How to Test This</h3>
-                <ol className="mt-4 space-y-3 text-sm text-slate-600">
-                  <li>
-                    <strong>1.</strong> Click Test Another Property.
-                  </li>
-                  <li>
-                    <strong>2.</strong> Enter a real address and agent details.
-                  </li>
-                  <li>
-                    <strong>3.</strong> Upload property photos.
-                  </li>
-                  <li>
-                    <strong>4.</strong> Select recommendations.
-                  </li>
-                  <li>
-                    <strong>5.</strong> Download and review the homeowner PDF.
-                  </li>
-                </ol>
+                <h3 className="font-black">Photo Labels</h3>
+                <p className="mt-2 text-sm text-slate-600">
+                  Uploaded photos are assigned to rooms and used directly in
+                  the PDF. Missing rooms are clearly marked as photo not
+                  provided.
+                </p>
+                <div className="mt-4 text-sm font-bold text-[#9a7100]">
+                  {photos.length} uploaded photo{photos.length === 1 ? "" : "s"}
+                </div>
               </div>
               <div className="rounded-2xl border bg-white p-5 shadow-sm">
                 <h3 className="font-black">Report Includes</h3>
                 <ul className="mt-4 space-y-2 text-sm text-slate-600">
                   {[
-                    "Property cover page",
+                    "Eight-page luxury PDF",
+                    "Photo-rich cover and room pages",
                     "Current and potential score",
-                    "Category scores",
-                    "Selected recommendations",
-                    "Marketing highlights",
+                    "Category and room scores",
+                    "Selected recommendations only",
                     "Next steps and disclaimer",
                   ].map((item) => (
-                    <li key={item}>✓ {item}</li>
+                    <li key={item}>
+                      <CheckIcon /> {item}
+                    </li>
                   ))}
                 </ul>
               </div>
@@ -790,8 +486,11 @@ export default function ListingReadinessPage() {
             </h3>
             <div className="mt-4 flex flex-wrap gap-2">
               {marketingHighlights.map((item) => (
-                <span className="rounded-full bg-slate-100 px-4 py-2 text-sm" key={item}>
-                  ✓ {item}
+                <span
+                  className="rounded-full bg-slate-100 px-4 py-2 text-sm"
+                  key={item}
+                >
+                  <CheckIcon /> {item}
                 </span>
               ))}
             </div>

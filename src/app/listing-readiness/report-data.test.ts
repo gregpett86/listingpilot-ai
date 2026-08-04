@@ -1,0 +1,87 @@
+import { describe, expect, it } from "vitest";
+import {
+  buildReadinessSummary,
+  calculateReadiness,
+  chooseCoverPhoto,
+  chooseInteriorPhoto,
+  inferRoomFromFilename,
+  improvements,
+  type UploadedPhoto,
+} from "./report-data";
+
+function photo(id: string, roomLabel: UploadedPhoto["roomLabel"]): UploadedPhoto {
+  return {
+    id,
+    name: `${id}.jpg`,
+    dataUrl: `data:image/jpeg;base64,${id}`,
+    roomLabel,
+  };
+}
+
+describe("listing readiness report data", () => {
+  it("calculates current and potential scores from selected recommendations", () => {
+    const firstTwo = improvements.slice(0, 2).map((item) => item.id);
+    const result = calculateReadiness(firstTwo);
+
+    expect(result.currentScore).toBe(74);
+    expect(result.potentialScore).toBe(92);
+    expect(result.selectedRecommendations.map((item) => item.title)).toEqual([
+      "Fresh Interior Paint",
+      "Upgrade Light Fixtures",
+    ]);
+  });
+
+  it("updates score when a selected recommendation is removed", () => {
+    const allSelected = calculateReadiness(improvements.map((item) => item.id));
+    const withoutPaint = calculateReadiness(
+      improvements.filter((item) => item.title !== "Fresh Interior Paint").map((item) => item.id),
+    );
+
+    expect(allSelected.currentScore - withoutPaint.currentScore).toBe(8);
+  });
+
+  it("prioritizes exterior photos for the cover and interior photos for the summary", () => {
+    const photos = [
+      photo("kitchen", "Kitchen"),
+      photo("front", "Exterior"),
+      photo("living", "Living Room"),
+    ];
+
+    expect(chooseCoverPhoto(photos)?.id).toBe("front");
+    expect(chooseInteriorPhoto(photos)?.id).toBe("kitchen");
+  });
+
+  it("infers room labels from filenames", () => {
+    expect(inferRoomFromFilename("front-exterior-01.jpg")).toBe("Exterior");
+    expect(inferRoomFromFilename("bright-kitchen-island.jpg")).toBe("Kitchen");
+    expect(inferRoomFromFilename("primary-bath-vanity.jpg")).toBe("Primary Bathroom");
+    expect(inferRoomFromFilename("unknown-angle.jpg")).toBe("Other");
+  });
+
+  it("builds PDF-ready room overviews with missing-photo placeholders", () => {
+    const summary = buildReadinessSummary(
+      improvements.map((item) => item.id),
+      [photo("front", "Exterior"), photo("kitchen", "Kitchen")],
+    );
+
+    expect(summary.coverPhoto?.id).toBe("front");
+    expect(summary.executivePhoto?.id).toBe("kitchen");
+    expect(summary.roomOverviews.find((room) => room.room === "Kitchen")?.photo?.id).toBe(
+      "kitchen",
+    );
+    expect(summary.roomOverviews.find((room) => room.room === "Primary Bathroom")?.photo).toBeUndefined();
+  });
+
+  it("uses only selected recommendations in the report summary", () => {
+    const kitchen = improvements.find((item) => item.room === "Kitchen");
+    expect(kitchen).toBeDefined();
+
+    const summary = buildReadinessSummary(kitchen ? [kitchen.id] : [], [
+      photo("kitchen", "Kitchen"),
+    ]);
+
+    expect(summary.selectedRecommendations).toHaveLength(1);
+    expect(summary.selectedRecommendations[0]?.room).toBe("Kitchen");
+    expect(summary.selectedPoints).toBe(kitchen?.points);
+  });
+});
