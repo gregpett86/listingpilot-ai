@@ -66,6 +66,16 @@ describe("listing readiness report data", () => {
     expect(chooseCoverPhoto(photos)?.id).toBe("living");
   });
 
+  it("uses a photo labeled Cover before exterior fallback", () => {
+    const photos = [
+      photo("front", "Exterior"),
+      photo("manual-cover", "Cover"),
+      photo("kitchen", "Kitchen"),
+    ];
+
+    expect(chooseCoverPhoto(photos)?.id).toBe("manual-cover");
+  });
+
   it("uses exterior as the cover when no explicit cover is designated", () => {
     const photos = [
       photo("kitchen", "Kitchen"),
@@ -83,6 +93,16 @@ describe("listing readiness report data", () => {
     ];
 
     expect(chooseCoverPhoto(photos)?.id).toBe("living");
+  });
+
+  it("uses backyard or rear exterior before the first uploaded fallback", () => {
+    const photos = [
+      photo("living", "Living Room"),
+      photo("back", "Backyard"),
+      photo("kitchen", "Kitchen"),
+    ];
+
+    expect(chooseCoverPhoto(photos)?.id).toBe("back");
   });
 
   it("ignores unusable uploaded image data for cover selection", () => {
@@ -110,6 +130,7 @@ describe("listing readiness report data", () => {
 
     expect(summary.coverPhoto?.id).toBe("front");
     expect(summary.photos).toHaveLength(2);
+    expect(summary.photos[0]?.dataUrl).toBe(validPngDataUrl);
     expect(summary.executivePhoto?.id).toBe("kitchen");
     expect(summary.marketingPhoto?.id).toBe("kitchen");
     expect(summary.roomOverviews.find((room) => room.room === "Kitchen")?.photo?.id).toBe(

@@ -37,6 +37,7 @@ export type UploadedPhoto = {
 };
 
 export type RoomLabel =
+  | "Cover"
   | "Exterior"
   | "Kitchen"
   | "Living Room"
@@ -45,6 +46,8 @@ export type RoomLabel =
   | "Bathroom"
   | "Dining Room"
   | "Backyard"
+  | "Garage"
+  | "Basement"
   | "Other";
 
 export type CategoryScore = {
@@ -85,14 +88,16 @@ export type ReadinessSummary = {
 export const baseScore = 62;
 
 export const roomLabels: RoomLabel[] = [
+  "Cover",
   "Exterior",
   "Kitchen",
   "Living Room",
   "Primary Bedroom",
-  "Primary Bathroom",
   "Bathroom",
   "Dining Room",
   "Backyard",
+  "Garage",
+  "Basement",
   "Other",
 ];
 
@@ -251,6 +256,7 @@ export const defaultProperty: PropertyDetails = {
 };
 
 const roomBaseScores: Record<RoomLabel, number> = {
+  Cover: 70,
   Exterior: 70,
   Kitchen: 74,
   "Living Room": 76,
@@ -259,6 +265,8 @@ const roomBaseScores: Record<RoomLabel, number> = {
   Bathroom: 68,
   "Dining Room": 71,
   Backyard: 73,
+  Garage: 68,
+  Basement: 67,
   Other: 70,
 };
 
@@ -338,8 +346,8 @@ export function chooseCoverPhoto(photos: UploadedPhoto[]) {
   const validPhotos = validUploadedPhotos(photos);
 
   return (
-    validPhotos.find((photo) => photo.isCoverPreferred && photo.roomLabel === "Exterior") ??
     validPhotos.find((photo) => photo.isCoverPreferred) ??
+    validPhotos.find((photo) => photo.roomLabel === "Cover") ??
     validPhotos.find((photo) => photo.roomLabel === "Exterior") ??
     validPhotos.find((photo) => photo.roomLabel === "Backyard") ??
     validPhotos[0]
@@ -417,7 +425,9 @@ export function buildRoomOverviews(
     "Bathroom",
     "Exterior",
   ];
-  const detectedRooms = photos.map((photo) => photo.roomLabel);
+  const detectedRooms = photos
+    .map((photo) => photo.roomLabel)
+    .filter((room) => room !== "Cover");
   const rooms = Array.from(new Set([...requiredRooms, ...detectedRooms]));
 
   return rooms.map((room) => {

@@ -7,7 +7,6 @@ import {
   defaultProperty,
   formatFieldLabel,
   improvements,
-  inferRoomFromFilename,
   marketingHighlights,
   type PropertyDetails,
   roomLabels,
@@ -96,9 +95,21 @@ export default function ListingReadinessPage() {
 
   function updatePhotoRoom(photoId: string, roomLabel: RoomLabel) {
     setPhotos((currentPhotos) =>
-      currentPhotos.map((photo) =>
-        photo.id === photoId ? { ...photo, roomLabel } : photo,
-      ),
+      currentPhotos.map((photo) => {
+        if (roomLabel === "Cover") {
+          return photo.id === photoId
+            ? { ...photo, isCoverPreferred: true, roomLabel: "Cover" }
+            : {
+                ...photo,
+                isCoverPreferred: false,
+                roomLabel: photo.roomLabel === "Cover" ? "Other" : photo.roomLabel,
+              };
+        }
+
+        return photo.id === photoId
+          ? { ...photo, isCoverPreferred: false, roomLabel }
+          : photo;
+      }),
     );
   }
 
@@ -112,13 +123,13 @@ export default function ListingReadinessPage() {
     setIsPreparingPhotos(true);
 
     try {
-      const uploadedPhotos = await Promise.all(
+      const uploadedPhotos: UploadedPhoto[] = await Promise.all(
         files.map(async (file) => ({
           id: `${file.name}-${file.size}-${file.lastModified}-${crypto.randomUUID()}`,
           isCoverPreferred: false,
           name: file.name,
           dataUrl: await readFileAsPdfImageDataUrl(file),
-          roomLabel: inferRoomFromFilename(file.name),
+          roomLabel: "Other",
         })),
       );
 
@@ -140,11 +151,20 @@ export default function ListingReadinessPage() {
 
   function markCoverPhoto(photoId: string) {
     setPhotos((currentPhotos) =>
-      currentPhotos.map((photo) => ({
-        ...photo,
-        isCoverPreferred: photo.id === photoId,
-      })),
+      currentPhotos.map((photo) =>
+        photo.id === photoId
+          ? { ...photo, isCoverPreferred: true, roomLabel: "Cover" }
+          : {
+              ...photo,
+              isCoverPreferred: false,
+              roomLabel: photo.roomLabel === "Cover" ? "Other" : photo.roomLabel,
+            },
+      ),
     );
+  }
+
+  function removePhoto(photoId: string) {
+    setPhotos((currentPhotos) => currentPhotos.filter((photo) => photo.id !== photoId));
   }
 
   function downloadReport() {
@@ -228,15 +248,37 @@ export default function ListingReadinessPage() {
               )}
             </label>
 
-            <label className="mt-5 block rounded-xl border-2 border-dashed border-slate-300 p-5 text-center">
-              <span className="font-bold">Upload property photos</span>
-              <span className="mt-1 block text-sm text-slate-500">
-                Upload multiple photos, then assign each one to the correct
-                room. Exterior photos are prioritized for the cover.
-              </span>
+            <section className="mt-5 rounded-2xl border border-[#d4a017]/40 bg-[#fffaf0] p-5 shadow-sm">
+              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <p className="text-xs font-black uppercase tracking-[0.22em] text-[#9a7100]">
+                    Property Photos
+                  </p>
+                  <h3 className="mt-1 text-xl font-black text-[#082442]">
+                    Upload property photos
+                  </h3>
+                  <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
+                    Add JPG, JPEG, PNG, or WEBP images, assign each room
+                    manually, and select one preferred cover for the dashboard
+                    and future homeowner report.
+                  </p>
+                </div>
+                <label className="cursor-pointer rounded-xl bg-[#082442] px-5 py-3 text-center text-sm font-black text-white shadow-lg shadow-slate-900/10">
+                  Upload Property Photos
+                  <input
+                    accept="image/jpeg,image/jpg,image/png,image/webp"
+                    className="sr-only"
+                    disabled={isPreparingPhotos}
+                    multiple
+                    onChange={handlePhotoUpload}
+                    type="file"
+                  />
+                </label>
+              </div>
               <input
-                accept="image/*"
-                className="mt-3 block w-full text-sm"
+                accept="image/jpeg,image/jpg,image/png,image/webp"
+                aria-label="Upload property photos"
+                className="mt-4 block w-full rounded-lg border border-slate-200 bg-white px-3 py-3 text-sm"
                 disabled={isPreparingPhotos}
                 multiple
                 onChange={handlePhotoUpload}
@@ -247,21 +289,40 @@ export default function ListingReadinessPage() {
                   Preparing photos for the PDF...
                 </span>
               )}
-            </label>
+              {photos.length > 0 && (
+                <p className="mt-3 text-sm font-semibold text-slate-600">
+                  {photos.length} uploaded photo{photos.length === 1 ? "" : "s"} ready
+                  for this test property.
+                </p>
+              )}
+            </section>
 
             {photos.length > 0 && (
               <div className="mt-4 grid grid-cols-2 gap-4 md:grid-cols-3">
                 {photos.map((photo) => (
                   <div className="rounded-xl border bg-slate-50 p-3" key={photo.id}>
-                    <div
-                      aria-label={photo.name}
-                      className="aspect-[4/3] rounded-lg bg-cover bg-center"
-                      role="img"
-                      style={{ backgroundImage: `url(${photo.dataUrl})` }}
-                    />
+                    <div className="relative">
+                      <div
+                        aria-label={photo.name}
+                        className="aspect-[4/3] rounded-lg bg-cover bg-center"
+                        role="img"
+                        style={{ backgroundImage: `url(${photo.dataUrl})` }}
+                      />
+                      {photo.isCoverPreferred && (
+                        <span className="absolute left-2 top-2 rounded-full bg-[#d4a017] px-3 py-1 text-xs font-black uppercase text-[#082442] shadow">
+                          Cover
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-3 truncate text-sm font-black text-[#082442]">
+                      {photo.name}
+                    </p>
+                    <p className="mt-1 text-xs font-bold uppercase text-slate-500">
+                      Assigned: {photo.roomLabel}
+                    </p>
                     <label className="mt-3 block">
                       <span className="mb-1 block text-xs font-bold uppercase text-slate-500">
-                        Room label
+                        Room / Category
                       </span>
                       <select
                         className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
@@ -287,6 +348,13 @@ export default function ListingReadinessPage() {
                       type="button"
                     >
                       {photo.isCoverPreferred ? "Cover photo selected" : "Use as cover photo"}
+                    </button>
+                    <button
+                      className="mt-2 w-full rounded-lg border border-red-200 bg-white px-3 py-2 text-sm font-black text-red-700"
+                      onClick={() => removePhoto(photo.id)}
+                      type="button"
+                    >
+                      Remove photo
                     </button>
                   </div>
                 ))}
