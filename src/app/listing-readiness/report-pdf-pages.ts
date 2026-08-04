@@ -126,6 +126,13 @@ function drawFact(ctx: PdfContext, kind: "beds" | "baths" | "sqft", value: strin
   doc.text(label.toUpperCase(), x + 12, y + 5);
 }
 
+function drawGoldRule(ctx: PdfContext, x: number, y: number, width: number) {
+  const { doc } = ctx;
+  setDrawColor(doc, pdfColors.gold);
+  doc.setLineWidth(0.55);
+  doc.line(x, y, x + width, y);
+}
+
 function drawCoverScore(ctx: PdfContext, score: number, x: number, y: number) {
   const { doc } = ctx;
   setDrawColor(doc, pdfColors.goldSoft);
@@ -199,9 +206,9 @@ function drawCoverDisclaimer(ctx: PdfContext) {
 export function PdfCover(ctx: PdfContext, property: PropertyDetails, summary: ReadinessSummary) {
   const { doc } = ctx;
   addReportPage(ctx);
-  const heroHeight = 113.8;
-  const panelY = 115.1;
-  const footerY = 207.6;
+  const heroHeight = 119;
+  const panelY = 120.3;
+  const footerY = 204.6;
   const opportunity = Math.max(0, summary.potentialScore - summary.currentScore);
 
   if (summary.coverPhoto) {
@@ -228,23 +235,23 @@ export function PdfCover(ctx: PdfContext, property: PropertyDetails, summary: Re
   setFillColor(doc, pdfColors.navyDark);
   doc.rect(0, panelY, pdfPage.width, footerY - panelY, "F");
 
-  drawKicker(doc, "Listing Readiness", 13, 127, pdfColors.gold);
+  drawKicker(doc, "Listing Readiness", 13, 132, pdfColors.gold);
   doc.setFont("times", "bold");
-  doc.setFontSize(45);
+  doc.setFontSize(42);
   setTextColor(doc, pdfColors.white);
-  doc.text("REPORT", 13, 145);
+  doc.text("REPORT", 13, 149);
   setDrawColor(doc, pdfColors.gold);
   doc.setLineWidth(0.5);
-  doc.line(13, 153, 31, 153);
+  doc.line(13, 155, 31, 155);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(10.2);
   doc.setFont("helvetica", "bold");
   setTextColor(doc, pdfColors.white);
-  doc.text(textLines(doc, property.address, 75), 13, 164);
+  doc.text(textLines(doc, property.address, 75), 13, 166);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8.4);
   setTextColor(doc, [178, 193, 211]);
-  doc.text(property.cityStateZip, 13, 171);
+  doc.text(property.cityStateZip, 13, 173);
   drawFact(ctx, "beds", property.beds, "Beds", 13, 185);
   setDrawColor(doc, [99, 113, 132]);
   doc.line(34, 180, 34, 190);
@@ -254,99 +261,149 @@ export function PdfCover(ctx: PdfContext, property: PropertyDetails, summary: Re
   doc.setFont("helvetica", "bold");
   doc.setFontSize(5.8);
   setTextColor(doc, pdfColors.gold);
-  doc.text("DATE PREPARED:", 13, 200);
+  doc.text("DATE PREPARED:", 13, 198);
   doc.setFontSize(6.7);
   setTextColor(doc, [220, 228, 238]);
-  doc.text(ctx.preparedDate.toUpperCase(), 39, 200);
+  doc.text(ctx.preparedDate.toUpperCase(), 39, 198);
 
-  drawCoverScore(ctx, summary.currentScore, 126, 151);
+  drawCoverScore(ctx, summary.currentScore, 126, 154);
   setDrawColor(doc, [118, 132, 149]);
   doc.setLineWidth(0.28);
-  doc.line(151, 126, 151, 196);
-  doc.line(199, 126, 199, 199);
+  doc.line(151, 130, 151, 197);
+  doc.line(199, 130, 199, 199);
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(23);
   setTextColor(doc, pdfColors.gold);
-  doc.text(`${summary.potentialScore}`, 162, 138, { align: "left" });
+  doc.text(`${summary.potentialScore}`, 162, 141, { align: "left" });
   doc.setFontSize(9);
   setTextColor(doc, pdfColors.white);
-  doc.text("/100", 166, 149, { align: "left" });
+  doc.text("/100", 166, 152, { align: "left" });
   doc.setFontSize(6);
   setTextColor(doc, pdfColors.white);
-  doc.text("POTENTIAL SCORE", 162, 158);
+  doc.text("POTENTIAL SCORE", 162, 160);
   setDrawColor(doc, pdfColors.gold);
   doc.setLineWidth(0.45);
-  doc.line(162, 164, 173, 164);
+  doc.line(162, 165, 173, 165);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(14);
   setTextColor(doc, opportunity > 0 ? pdfColors.positive : [86, 187, 128]);
-  doc.text(`+${opportunity}`, 162, 179);
+  doc.text(`+${opportunity}`, 162, 178);
   doc.setFontSize(6.5);
   setTextColor(doc, pdfColors.white);
-  doc.text("POINTS OF", 162, 187);
-  doc.text("OPPORTUNITY", 162, 193);
+  doc.text("POINTS OF", 162, 186);
+  doc.text("OPPORTUNITY", 162, 192);
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(5.8);
   setTextColor(doc, pdfColors.gold);
-  doc.text("PREPARED FOR", 209, 127);
+  doc.text("PREPARED FOR", 209, 132);
   doc.setFontSize(10.2);
   setTextColor(doc, pdfColors.white);
-  doc.text(textLines(doc, homeownerName(property), 58), 209, 137);
+  doc.text(textLines(doc, homeownerName(property), 58), 209, 141);
   setDrawColor(doc, [45, 65, 89]);
   doc.setLineWidth(0.3);
-  doc.line(209, 143, 237, 143);
+  doc.line(209, 147, 237, 147);
   doc.setFontSize(5.8);
   setTextColor(doc, pdfColors.gold);
-  doc.text("PREPARED BY", 209, 153);
-  drawAgentAvatar(ctx, property, 209, 158);
+  doc.text("PREPARED BY", 209, 156);
+  drawAgentAvatar(ctx, property, 209, 161);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(8.8);
   setTextColor(doc, pdfColors.white);
-  doc.text(textLines(doc, property.agentName, 45), 231, 163);
+  doc.text(textLines(doc, property.agentName, 45), 231, 166);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(6.3);
   setTextColor(doc, pdfColors.gold);
-  doc.text("Real Estate Professional", 231, 171);
-  doc.text(textLines(doc, property.brokerage, 45), 231, 178);
+  doc.text("Real Estate Professional", 231, 174);
+  doc.text(textLines(doc, property.brokerage, 45), 231, 181);
   setTextColor(doc, pdfColors.white);
-  doc.text(property.agentPhone, 231, 185);
-  doc.text(textLines(doc, property.agentEmail, 43), 231, 191);
+  doc.text(property.agentPhone, 231, 188);
+  doc.text(textLines(doc, property.agentEmail, 43), 231, 194);
   if (property.agentWebsite.trim()) {
-    doc.text(textLines(doc, property.agentWebsite.trim(), 43), 231, 197);
+    doc.text(textLines(doc, property.agentWebsite.trim(), 43), 231, 200);
   }
-  drawFooterBrand(ctx, 209, 204);
+  drawFooterBrand(ctx, 209, 202);
   drawCoverDisclaimer(ctx);
 }
 
 export function PdfExecutiveSummary(ctx: PdfContext, property: PropertyDetails, summary: ReadinessSummary) {
   const { doc } = ctx;
   addReportPage(ctx);
-  drawPhotoFrame(doc, summary.executivePhoto, { x: 14, y: 18, w: 145, h: 170 }, { label: "Interior photo not provided", placeholder: "compact" });
-  drawKicker(doc, "Executive Summary", 174, 31);
-  drawTitle(doc, "A clear path to a stronger listing launch.", 174, 45, 19);
-  let y = drawBody(
+  const opportunity = Math.max(0, summary.potentialScore - summary.currentScore);
+
+  setFillColor(doc, pdfColors.navyDark);
+  doc.rect(0, 0, pdfPage.width, pdfPage.height, "F");
+  drawPhotoFrame(
+    doc,
+    summary.executivePhoto,
+    { x: 0, y: 0, w: 158, h: 204 },
+    { label: "Interior photo not provided", placeholder: "compact" },
+  );
+  setFillColor(doc, [253, 250, 241]);
+  doc.rect(0, 204, pdfPage.width, 11.9, "F");
+  setFillColor(doc, pdfColors.gold);
+  doc.rect(158, 0, 1.4, 204, "F");
+  setFillColor(doc, pdfColors.navyDark);
+  doc.rect(159.4, 0, pdfPage.width - 159.4, 204, "F");
+  setDrawColor(doc, [49, 69, 93]);
+  doc.setLineWidth(0.35);
+  doc.line(179, 122, 260, 122);
+
+  drawKicker(doc, "Executive Summary", 179, 31, pdfColors.gold);
+  doc.setFont("times", "bold");
+  doc.setFontSize(29);
+  setTextColor(doc, pdfColors.white);
+  doc.text(textLines(doc, "A Clear Path to a Stronger Listing", 82), 179, 48);
+  drawGoldRule(ctx, 179, 71, 20);
+  const y = drawBody(
     doc,
     `${property.address} is being evaluated through the lens of buyer presentation, photography readiness, and first-impression quality. The recommendations focus on visible preparation choices that can help the home feel more polished before it reaches the market.`,
     174,
-    61,
-    82,
-    9.5,
+    85,
+    84,
+    8.2,
+    4.8,
+    [218, 226, 237],
   );
-  y = drawBody(
+  drawBody(
     doc,
     "The score is a marketing-readiness signal based on the photos and information provided. It is not an appraisal, inspection, or promise of market performance.",
-    174,
+    179,
     y + 5,
     82,
-    9.5,
+    8.2,
+    4.8,
+    [218, 226, 237],
   );
-  drawMetric(doc, "Current Score", `${summary.currentScore}`, 174, y + 24);
-  drawMetric(doc, "Potential Score", `${summary.potentialScore}`, 214, y + 24, { color: pdfColors.positive });
-  drawMetric(doc, "Opportunity Points", `+${summary.totalPossibleIncrease}`, 174, y + 53, { color: pdfColors.gold });
-  drawReportBadge(doc, "Marketing preparation guidance", 214, y + 44, 44, "gold");
-  drawFooter(ctx);
+
+  setFillColor(doc, [8, 32, 59]);
+  doc.roundedRect(179, 135, 80, 44, 2, 2, "F");
+  setDrawColor(doc, [58, 78, 103]);
+  doc.setLineWidth(0.25);
+  doc.line(205, 143, 205, 170);
+  doc.line(232, 143, 232, 170);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(20);
+  setTextColor(doc, pdfColors.white);
+  doc.text(`${summary.currentScore}`, 192, 153, { align: "center" });
+  setTextColor(doc, pdfColors.gold);
+  doc.text(`${summary.potentialScore}`, 219, 153, { align: "center" });
+  setTextColor(doc, opportunity > 0 ? pdfColors.positive : [86, 187, 128]);
+  doc.text(`+${opportunity}`, 246, 153, { align: "center" });
+  doc.setFontSize(5.8);
+  setTextColor(doc, [205, 216, 229]);
+  doc.text("CURRENT", 192, 163, { align: "center" });
+  doc.text("POTENTIAL", 219, 163, { align: "center" });
+  doc.text("OPPORTUNITY", 246, 163, { align: "center" });
+  drawReportBadge(doc, "Marketing preparation guidance", 194, 171, 50, "gold");
+
+  drawFooterBrand(ctx, 179, 194);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(6.8);
+  setTextColor(doc, pdfColors.slate);
+  doc.text("Listing Readiness Report", 16, 211);
+  doc.text("Page 2 of 8", pdfPage.width - 16, 211, { align: "right" });
 }
 
 export function PdfCategoryScores(ctx: PdfContext, summary: ReadinessSummary) {
