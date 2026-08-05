@@ -407,7 +407,7 @@ function exportReportPdf(
   y += 7;
   doc.setFontSize(20);
   doc.setTextColor(...navy);
-  doc.text("AI Listing Presentation", margin, y);
+  doc.text("Listing Evaluation", margin, y);
   y += 8;
   doc.setFontSize(15);
   doc.text("Home Sale Optimization Report", margin, y);
@@ -418,7 +418,7 @@ function exportReportPdf(
 
   addSectionTitle("A. Property Overview");
   addParagraph(
-    "Home Sale Readiness Report prepared from the uploaded ListingPilot AI photo analysis.",
+    "Listing Evaluation Report prepared from uploaded property photo analysis.",
   );
 
   addSectionTitle("B. Executive Summary");
@@ -1741,7 +1741,7 @@ export default function Home() {
                       Real-Photo Validation
                     </p>
                     <h2 className="mt-2 text-base font-bold text-[#111827]">
-                      Listing AI Output Review
+                      Listing Evaluation Output Review
                     </h2>
                     <p className="mt-1 text-sm leading-6 text-[#6B7280]">
                       Development-only review surface for checking photo-level
@@ -1988,7 +1988,7 @@ export default function Home() {
                     </h3>
                     <p className="mt-2 text-sm leading-6 text-[#6B7280]">
                       Home Sale Readiness Report prepared from the uploaded
-                      ListingPilot AI photo analysis.
+                      Listing Evaluation photo analysis.
                     </p>
                   </section>
 

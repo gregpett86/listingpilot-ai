@@ -8,7 +8,17 @@ type NavItem = {
   href: string;
   label: string;
   icon: ReactNode;
-  active?: boolean;
+};
+
+type RealtyEdgeShellProps = {
+  activeLabel?: string;
+  children: ReactNode;
+};
+
+type RealtyEdgePageHeaderProps = {
+  breadcrumbCurrent?: string;
+  description?: string;
+  title?: string;
 };
 
 const iconProps = {
@@ -97,19 +107,26 @@ function IconChevron() {
 
 const navItems: NavItem[] = [
   { href: "#", label: "Dashboard", icon: <IconHome /> },
-  {
-    href: "#",
-    label: "AI Listing Presentation",
-    icon: <IconSpark />,
-    active: true,
-  },
   { href: "#", label: "New CMA / Property", icon: <IconDoc /> },
+  {
+    href: "/listing-evaluation/new",
+    label: "Listing Evaluation",
+    icon: <IconSpark />,
+  },
   { href: "#", label: "My Reports", icon: <IconDoc /> },
   { href: "#", label: "Leads", icon: <IconLeads /> },
   { href: "#", label: "Profile", icon: <IconSettings /> },
 ];
 
-function Sidebar({ onClose, showClose }: { onClose?: () => void; showClose?: boolean }) {
+function Sidebar({
+  activeLabel = "Listing Evaluation",
+  onClose,
+  showClose,
+}: {
+  activeLabel?: string;
+  onClose?: () => void;
+  showClose?: boolean;
+}) {
   return (
     <aside className="flex h-full w-[260px] min-w-[260px] shrink-0 flex-col overflow-y-auto bg-[#1B2238]">
       <div className="flex items-center justify-between border-b border-white/10 bg-[#0B1437]">
@@ -137,7 +154,7 @@ function Sidebar({ onClose, showClose }: { onClose?: () => void; showClose?: boo
         {navItems.map((item) => (
           <Link
             className={`mb-0.5 flex items-center gap-2.5 rounded-lg px-3.5 py-2.5 text-[13px] font-semibold no-underline transition ${
-              item.active
+              item.label === activeLabel
                 ? "bg-[#D4A017] text-[#111827]"
                 : "text-white/60 hover:bg-white/10 hover:text-white"
             }`}
@@ -153,7 +170,10 @@ function Sidebar({ onClose, showClose }: { onClose?: () => void; showClose?: boo
   );
 }
 
-export function RealtyEdgeShell({ children }: { children: ReactNode }) {
+export function RealtyEdgeShell({
+  activeLabel = "Listing Evaluation",
+  children,
+}: RealtyEdgeShellProps) {
   const [isMobile, setIsMobile] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -168,7 +188,7 @@ export function RealtyEdgeShell({ children }: { children: ReactNode }) {
     <div className="flex h-screen flex-col overflow-hidden bg-[#F5F7FA]">
       <div className="h-[3px] w-full shrink-0 bg-[#D4A017]" />
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        {!isMobile && <Sidebar />}
+        {!isMobile && <Sidebar activeLabel={activeLabel} />}
 
         {isMobile && (
           <>
@@ -189,7 +209,11 @@ export function RealtyEdgeShell({ children }: { children: ReactNode }) {
                   type="button"
                 />
                 <div className="fixed bottom-0 left-0 top-0 z-[66]">
-                  <Sidebar onClose={() => setMobileOpen(false)} showClose />
+                  <Sidebar
+                    activeLabel={activeLabel}
+                    onClose={() => setMobileOpen(false)}
+                    showClose
+                  />
                 </div>
               </>
             )}
@@ -202,7 +226,11 @@ export function RealtyEdgeShell({ children }: { children: ReactNode }) {
   );
 }
 
-export function RealtyEdgePageHeader() {
+export function RealtyEdgePageHeader({
+  breadcrumbCurrent = "Listing Evaluation",
+  description = "Create a homeowner-ready Listing Evaluation report from property photos.",
+  title = "Listing Evaluation",
+}: RealtyEdgePageHeaderProps) {
   return (
     <header className="shrink-0 border-b border-[#E5E7EB] bg-white px-6 py-5 sm:px-8">
       <nav
@@ -212,16 +240,16 @@ export function RealtyEdgePageHeader() {
         <span>Dashboard</span>
         <IconChevron />
         <span className="font-semibold text-[#111827]">
-          AI Listing Presentation
+          {breadcrumbCurrent}
         </span>
       </nav>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="m-0 text-[22px] font-extrabold tracking-[-0.01em] text-[#111827]">
-            AI Listing Presentation
+            {title}
           </h1>
           <p className="mt-1 text-sm font-medium text-[#6B7280]">
-            Generate a seller-ready Home Sale Optimization Report from property photos.
+            {description}
           </p>
         </div>
       </div>

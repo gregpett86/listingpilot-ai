@@ -642,7 +642,7 @@ describe("ListingPilot page", () => {
     await userEvent.click(screen.getByRole("button", { name: "Download PDF" }));
 
     const pdfText = pdfTextLog.join(" ");
-    expect(pdfText).toContain("Home Sale Readiness Report");
+    expect(pdfText).toContain("Listing Evaluation");
     expect(pdfText).toContain("G. Seller Preparation Checklist");
     expect(pdfText).not.toContain("failed.png");
     expect(pdfText).not.toContain("scored.png");
