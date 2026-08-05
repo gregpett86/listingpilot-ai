@@ -1,3 +1,11 @@
+import {
+  recommendImprovements,
+  type ConfidenceLevel,
+  type PropertyCondition,
+  type RoomType,
+} from "@/lib/property-intelligence";
+import type { VisionFinding } from "@/lib/analysis-schema";
+
 export type Difficulty = "Very Easy" | "Easy" | "Medium";
 
 export type Improvement = {
@@ -11,6 +19,11 @@ export type Improvement = {
   category: string;
   reasons: string[];
   priority: "High" | "Medium" | "Low";
+  confidence?: number;
+  detectedCategory?: RoomLabel;
+  sourcePhoto?: UploadedPhoto;
+  visibleFindings?: string[];
+  whyItMatters?: string;
 };
 
 export type PropertyDetails = {
@@ -37,9 +50,15 @@ export type PropertyDetails = {
 
 export type UploadedPhoto = {
   agentCorrectedClassification?: boolean;
+  analysisFailure?: string;
+  analysisStatus?: "pending" | "analyzing" | "complete" | "needs_review";
   classificationMode?: "ai" | "manual_fallback" | "agent";
+  condition?: PropertyCondition;
   confidence?: number;
   detectedRoomLabel?: RoomLabel;
+  explicitlySupportedRecommendations?: string[];
+  fileMimeType?: string;
+  fileSize?: number;
   height?: number;
   id: string;
   includedInReport?: boolean;
@@ -48,6 +67,7 @@ export type UploadedPhoto = {
   name: string;
   dataUrl: string;
   roomLabel: RoomLabel;
+  visibleFindings?: string[];
   width?: number;
 };
 
@@ -474,6 +494,203 @@ export function calculateReadiness(selectedIds: number[]) {
   };
 }
 
+const confidenceScores: Record<ConfidenceLevel, number> = {
+  High: 0.92,
+  Medium: 0.72,
+  Low: 0.46,
+};
+
+const roomTypeToLabel: Record<RoomType, RoomLabel> = {
+  Bathroom: "Bathroom",
+  Basement: "Basement",
+  Bedroom: "Bedroom",
+  Exterior: "Front Exterior",
+  Garage: "Garage",
+  Hallway: "Hallway",
+  Kitchen: "Kitchen",
+  Landscaping: "Landscaping",
+  "Living Room": "Living Room",
+  Pool: "Pool",
+  Stairs: "Stairs",
+};
+
+const roomLabelToRoomType: Partial<Record<RoomLabel, RoomType>> = {
+  Backyard: "Exterior",
+  Basement: "Basement",
+  Bathroom: "Bathroom",
+  Bedroom: "Bedroom",
+  Exterior: "Exterior",
+  "Front Exterior": "Exterior",
+  Garage: "Garage",
+  Hallway: "Hallway",
+  Kitchen: "Kitchen",
+  Landscaping: "Landscaping",
+  "Living Room": "Living Room",
+  Patio: "Exterior",
+  Pool: "Pool",
+  "Primary Bathroom": "Bathroom",
+  "Primary Bedroom": "Bedroom",
+  "Rear Exterior": "Exterior",
+  "Side Exterior": "Exterior",
+  Stairs: "Stairs",
+};
+
+function nextPhotoRecommendationId(index: number) {
+  return 10_000 + index;
+}
+
+function difficultyFromPriority(priority: "High" | "Medium" | "Low"): Difficulty {
+  if (priority === "High") return "Easy";
+  if (priority === "Medium") return "Easy";
+  return "Very Easy";
+}
+
+function timeFromPriority(priority: "High" | "Medium" | "Low") {
+  if (priority === "High") return "1-2 days";
+  if (priority === "Medium") return "2-4 hours";
+  return "1-2 hours";
+}
+
+function pointsFromPriority(priority: "High" | "Medium" | "Low") {
+  if (priority === "High") return 8;
+  if (priority === "Medium") return 5;
+  return 3;
+}
+
+function roomCategoryForScore(room: RoomLabel) {
+  if (room.includes("Exterior") || room === "Backyard" || room === "Patio" || room === "Landscaping") {
+    return "Curb Appeal";
+  }
+
+  if (room === "Kitchen" || room === "Bathroom" || room === "Primary Bathroom") {
+    return "Photo Readiness";
+  }
+
+  return "Interior Appeal";
+}
+
+export function roomLabelFromVisionRoom(roomType: RoomType): RoomLabel {
+  return roomTypeToLabel[roomType];
+}
+
+export function roomTypeFromRoomLabel(roomLabel: RoomLabel): RoomType | undefined {
+  return roomLabelToRoomType[photoReportRoom({ id: "room", name: "room", dataUrl: "", roomLabel }) as RoomLabel];
+}
+
+export function applyVisionFindingToPhoto(
+  photo: UploadedPhoto,
+  finding: VisionFinding,
+): UploadedPhoto {
+  const roomLabel = roomLabelFromVisionRoom(finding.assignedCategory);
+
+  return {
+    ...photo,
+    analysisFailure: undefined,
+    analysisStatus: "complete",
+    classificationMode: "ai",
+    condition: finding.condition,
+    confidence: confidenceScores[finding.confidence],
+    detectedRoomLabel: roomLabelFromVisionRoom(finding.suggestedCategory),
+    explicitlySupportedRecommendations: finding.explicitlySupportedRecommendations,
+    includedInReport: photo.includedInReport ?? true,
+    roomLabel,
+    visibleFindings: finding.visibleFindings,
+  };
+}
+
+export function buildPhotoBackedRecommendations(
+  photos: UploadedPhoto[],
+): Improvement[] {
+  const recommendations: Improvement[] = [];
+
+  normalizeReportPhotos(photos)
+    .filter(isIncludedReportPhoto)
+    .forEach((photo) => {
+      const room = photoReportRoom(photo) as RoomLabel;
+      const roomType = roomTypeFromRoomLabel(room);
+
+      if (!roomType || room === "Unknown" || photo.analysisStatus === "needs_review") {
+        return;
+      }
+
+      const visibleFindings = photo.visibleFindings ?? [];
+      const condition = photo.condition ?? "Average";
+
+      if (visibleFindings.length === 0) {
+        return;
+      }
+
+      const photoRecommendations = recommendImprovements({
+        limit: 2,
+        observations: [
+          {
+            condition,
+            notes: visibleFindings.join("; "),
+            observedIssues: visibleFindings,
+            photoCount: 1,
+            roomType,
+          },
+        ],
+      });
+
+      photoRecommendations.forEach((recommendation) => {
+        recommendations.push({
+          category: roomCategoryForScore(room),
+          confidence: photo.confidence,
+          description: recommendation.improvement.description,
+          detectedCategory: photo.detectedRoomLabel ?? room,
+          difficulty: difficultyFromPriority(recommendation.priority),
+          id: nextPhotoRecommendationId(recommendations.length),
+          points: pointsFromPriority(recommendation.priority),
+          priority: recommendation.priority,
+          reasons: recommendation.sellerTalkingPoints.length > 0
+            ? recommendation.sellerTalkingPoints
+            : recommendation.reasons,
+          room,
+          sourcePhoto: photo,
+          time: timeFromPriority(recommendation.priority),
+          title: recommendation.improvement.improvementName,
+          visibleFindings,
+          whyItMatters:
+            recommendation.sellerTalkingPoints[0] ??
+            recommendation.reasons[0] ??
+            `${room} has visible preparation opportunities in the analyzed photo.`,
+        });
+      });
+    });
+
+  return recommendations;
+}
+
+export function recommendationIds(recommendations: Improvement[]) {
+  return recommendations.map((item) => item.id);
+}
+
+export function calculateReadinessFromRecommendations(
+  selectedIds: number[],
+  recommendationList: Improvement[],
+) {
+  const selectedRecommendations = recommendationList.filter((item) =>
+    selectedIds.includes(item.id),
+  );
+  const selectedPoints = selectedRecommendations.reduce(
+    (sum, item) => sum + item.points,
+    0,
+  );
+  const totalPossibleIncrease = recommendationList.reduce(
+    (sum, item) => sum + item.points,
+    0,
+  );
+
+  return {
+    currentScore: Math.min(100, baseScore + selectedPoints),
+    potentialScore: Math.min(100, baseScore + totalPossibleIncrease),
+    selectedPoints,
+    totalPossibleIncrease,
+    selectedRecommendations,
+  };
+}
+
 export function inferRoomFromFilename(name: string): RoomLabel {
   const normalized = name.toLowerCase();
 
@@ -528,6 +745,14 @@ export function photoReportRoom(photo: UploadedPhoto) {
 export function applyFallbackPhotoClassification(photo: UploadedPhoto): UploadedPhoto {
   if (photo.classificationMode === "ai" || photo.agentCorrectedClassification) {
     return photo;
+  }
+
+  if (photo.classificationMode !== "manual_fallback") {
+    return {
+      ...photo,
+      includedInReport: photo.includedInReport ?? true,
+      roomLabel: photo.roomLabel ?? "Unknown",
+    };
   }
 
   const detectedRoomLabel =
@@ -771,6 +996,7 @@ export function groupRoomPhotos(photos: UploadedPhoto[]): RoomPhotoGroup[] {
     .filter(isIncludedReportPhoto)
     .forEach((photo) => {
       const room = photoReportRoom(photo);
+      if (room === "Unknown") return;
       grouped.set(room, [...(grouped.get(room) ?? []), photo]);
     });
 
@@ -846,17 +1072,15 @@ export function calculatePhotoCoverage(
 export function chooseSecondaryDetailRoom(roomOverviews: RoomOverview[]) {
   return (
     roomOverviews.find(
-      (room) => room.room === "Primary Bathroom" && room.photo,
+      (room) => room.room === "Primary Bathroom" && room.photo && room.recommendations.length > 0,
     ) ??
     roomOverviews.find(
-      (room) => room.room === "Primary Bedroom" && room.photo,
+      (room) => room.room === "Primary Bedroom" && room.photo && room.recommendations.length > 0,
     ) ??
     roomOverviews.find(
-      (room) => room.room === "Living Room" && room.photo,
+      (room) => room.room === "Living Room" && room.photo && room.recommendations.length > 0,
     ) ??
-    roomOverviews.find((room) => room.photo && room.room !== "Kitchen") ??
-    roomOverviews.find((room) => room.room === "Primary Bathroom") ??
-    roomOverviews.find((room) => room.room !== "Kitchen") ??
+    roomOverviews.find((room) => room.photo && room.room !== "Kitchen" && room.recommendations.length > 0) ??
     roomOverviews[0]
   );
 }
@@ -866,31 +1090,31 @@ export function buildRoomOverviews(
   selectedRecommendations: Improvement[],
 ): RoomOverview[] {
   const normalizedPhotos = normalizeReportPhotos(photos);
-  const requiredRooms: RoomLabel[] = [
-    "Kitchen",
-    "Living Room",
-    "Primary Bedroom",
-    "Bathroom",
-    "Front Exterior",
-  ];
   const detectedRooms = normalizedPhotos
+    .filter(isIncludedReportPhoto)
     .map((photo) => photoReportRoom(photo) as RoomLabel)
-    .filter((room) => room !== "Cover");
-  const rooms = Array.from(new Set([...requiredRooms, ...detectedRooms]));
+    .filter((room) => room !== "Cover" && room !== "Unknown");
+  const rooms = Array.from(new Set(detectedRooms));
 
-  return rooms.map((room) => {
+  return rooms.flatMap((room) => {
     const recommendations = selectedRecommendations.filter(
-      (item) => item.room === room || (item.room === "Whole Home" && room !== "Exterior"),
+      (item) => item.room === room,
     );
+    const photo = normalizedPhotos
+      .filter(isIncludedReportPhoto)
+      .find((candidate) => photoReportRoom(candidate) === room);
+
+    if (!photo) {
+      return [];
+    }
+
     const scoreLift = recommendations.reduce((sum, item) => sum + item.points, 0);
     const current = roomBaseScores[room] ?? 70;
     const potential = Math.min(96, current + scoreLift + (scoreLift > 0 ? 8 : 5));
 
-    return {
+    return [{
       room,
-      photo: normalizedPhotos
-        .filter(isIncludedReportPhoto)
-        .find((photo) => photoReportRoom(photo) === room),
+      photo,
       current,
       potential,
       recommendations,
@@ -898,7 +1122,7 @@ export function buildRoomOverviews(
         scoreLift > 0
           ? "Preparation recommended before photography"
           : "Presentation appears ready based on provided photos",
-    };
+    }];
   });
 }
 
@@ -906,10 +1130,14 @@ export function buildReadinessSummary(
   selectedIds: number[],
   photos: UploadedPhoto[],
   property: PropertyDetails = defaultProperty,
-  options: { addressHeroPhotoLookup?: AddressHeroPhotoLookupResult } = {},
+  options: {
+    addressHeroPhotoLookup?: AddressHeroPhotoLookupResult;
+    recommendations?: Improvement[];
+  } = {},
 ): ReadinessSummary {
   const normalizedPhotos = normalizeReportPhotos(photos);
-  const readiness = calculateReadiness(selectedIds);
+  const recommendationList = options.recommendations ?? improvements;
+  const readiness = calculateReadinessFromRecommendations(selectedIds, recommendationList);
   const propertyHeroPhoto = resolvePropertyHeroPhoto(
     normalizedPhotos,
     options.addressHeroPhotoLookup,

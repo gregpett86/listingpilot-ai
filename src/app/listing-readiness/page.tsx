@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { ChangeEvent, useMemo, useState } from "react";
+import type { AnalyzePhotosResponse } from "@/lib/analysis-schema";
 import {
   LuxuryCard,
   ProgressBar,
@@ -10,10 +11,12 @@ import {
 } from "@/components/realty-edge-design-system";
 import {
   buildReadinessSummary,
+  buildPhotoBackedRecommendations,
   defaultProperty,
   formatFieldLabel,
-  improvements,
   marketingHighlights,
+  applyVisionFindingToPhoto,
+  roomTypeFromRoomLabel,
   type PropertyDetails,
   reviewRoomLabels,
   type RoomLabel,
@@ -58,9 +61,12 @@ async function readFileAsPdfImage(file: File) {
   context.fillStyle = "#082442";
   context.fillRect(0, 0, canvas.width, canvas.height);
   context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  const pdfDataUrl = canvas.toDataURL("image/jpeg", 0.92);
+  const base64 = pdfDataUrl.split(",")[1] ?? "";
   return {
-    dataUrl: canvas.toDataURL("image/jpeg", 0.92),
+    dataUrl: pdfDataUrl,
     height,
+    preparedByteLength: Math.floor((base64.length * 3) / 4) - (base64.endsWith("==") ? 2 : base64.endsWith("=") ? 1 : 0),
     width,
   };
 }
@@ -71,11 +77,8 @@ function CheckIcon() {
 
 const workflowSteps = [
   "Property Details",
-  "Main Exterior Photo",
-  "Upload Property Photos",
-  "AI Organizes Photos",
-  "Review & Correct",
-  "Generate Report",
+  "Upload Photos",
+  "Review & Generate Report",
 ] as const;
 
 type WorkflowStep = (typeof workflowSteps)[number];
@@ -85,13 +88,13 @@ function formatRoomLabel(room: string) {
 }
 
 export default function ListingReadinessPage() {
-  const [selected, setSelected] = useState<number[]>(
-    improvements.map((item) => item.id),
-  );
+  const [excludedRecommendationIds, setExcludedRecommendationIds] = useState<number[]>([]);
   const [expanded, setExpanded] = useState<number | null>(null);
   const [showSetup, setShowSetup] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [isPreparingPhotos, setIsPreparingPhotos] = useState(false);
+  const [isAnalyzingPhotos, setIsAnalyzingPhotos] = useState(false);
+  const [analysisError, setAnalysisError] = useState("");
   const [activeStep, setActiveStep] = useState<WorkflowStep>("Property Details");
   const [mainExteriorPhoto, setMainExteriorPhoto] = useState<UploadedPhoto | null>(null);
   const [photos, setPhotos] = useState<UploadedPhoto[]>([]);
@@ -101,9 +104,23 @@ export default function ListingReadinessPage() {
     () => (mainExteriorPhoto ? [mainExteriorPhoto, ...photos] : photos),
     [mainExteriorPhoto, photos],
   );
+  const photoBackedRecommendations = useMemo(
+    () => buildPhotoBackedRecommendations(reportPhotos),
+    [reportPhotos],
+  );
+  const selected = useMemo(
+    () =>
+      photoBackedRecommendations
+        .map((item) => item.id)
+        .filter((id) => !excludedRecommendationIds.includes(id)),
+    [excludedRecommendationIds, photoBackedRecommendations],
+  );
   const summary = useMemo(
-    () => buildReadinessSummary(selected, reportPhotos, property),
-    [property, reportPhotos, selected],
+    () =>
+      buildReadinessSummary(selected, reportPhotos, property, {
+        recommendations: photoBackedRecommendations,
+      }),
+    [photoBackedRecommendations, property, reportPhotos, selected],
   );
 
   function showMessage(message: string) {
@@ -112,10 +129,10 @@ export default function ListingReadinessPage() {
   }
 
   function toggleRecommendation(id: number) {
-    setSelected((selection) =>
-      selection.includes(id)
-        ? selection.filter((selectedId) => selectedId !== id)
-        : [...selection, id],
+    setExcludedRecommendationIds((excludedIds) =>
+      excludedIds.includes(id)
+        ? excludedIds.filter((excludedId) => excludedId !== id)
+        : [...excludedIds, id],
     );
   }
 
@@ -136,12 +153,14 @@ export default function ListingReadinessPage() {
     setPhotos((currentPhotos) =>
       currentPhotos.map((photo) => {
         return photo.id === photoId
-          ? {
-              ...photo,
-              agentCorrectedClassification: true,
-              classificationMode: "agent",
-              confidence: 1,
-              detectedRoomLabel: roomLabel,
+            ? {
+                ...photo,
+                agentCorrectedClassification: true,
+                analysisFailure: undefined,
+                analysisStatus: roomLabel === "Unknown" ? "needs_review" : "complete",
+                classificationMode: "agent",
+                confidence: 1,
+                detectedRoomLabel: roomLabel,
               roomLabel,
             }
           : photo;
@@ -153,16 +172,122 @@ export default function ListingReadinessPage() {
     const preparedPhoto = await readFileAsPdfImage(file);
     return {
       id: `${file.name}-${file.size}-${file.lastModified}-${crypto.randomUUID()}`,
+      analysisStatus: "pending",
+      fileMimeType: "image/jpeg",
+      fileSize: preparedPhoto.preparedByteLength,
       includedInReport: true,
       isCoverPreferred: false,
       name: file.name,
       ...preparedPhoto,
-      classificationMode: "manual_fallback",
-      confidence: 0.35,
+      confidence: 0,
       detectedRoomLabel: "Unknown",
       roomLabel: "Unknown",
       ...overrides,
     } satisfies UploadedPhoto;
+  }
+
+  function updatePhotosById(updatedPhotos: UploadedPhoto[]) {
+    const updatedById = new Map(updatedPhotos.map((photo) => [photo.id, photo]));
+
+    setPhotos((currentPhotos) =>
+      currentPhotos.map((photo) => updatedById.get(photo.id) ?? photo),
+    );
+    setMainExteriorPhoto((currentPhoto) =>
+      currentPhoto ? updatedById.get(currentPhoto.id) ?? currentPhoto : currentPhoto,
+    );
+  }
+
+  async function analyzeUploadedPhotos(targetPhotos: UploadedPhoto[]) {
+    const photosForAnalysis = targetPhotos.filter(
+      (photo) => photo.roomLabel !== "Cover" && photo.dataUrl,
+    );
+
+    if (photosForAnalysis.length === 0) {
+      return;
+    }
+
+    setIsAnalyzingPhotos(true);
+    setAnalysisError("");
+    updatePhotosById(
+      photosForAnalysis.map((photo) => ({
+        ...photo,
+        analysisFailure: undefined,
+        analysisStatus: "analyzing",
+      })),
+    );
+
+    try {
+      const response = await fetch("/api/analyze-photos", {
+        body: JSON.stringify({
+          photos: photosForAnalysis.map((photo) => ({
+            assignedCategory:
+              photo.agentCorrectedClassification && photo.roomLabel !== "Unknown"
+                ? roomTypeFromRoomLabel(photo.roomLabel)
+                : undefined,
+            dataUrl: photo.dataUrl,
+            fileMimeType: photo.fileMimeType,
+            fileSize: photo.fileSize,
+            id: photo.id,
+            name: photo.name,
+          })),
+        }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const result = (await response.json()) as AnalyzePhotosResponse;
+
+      if (!response.ok) {
+        throw new Error(result.error ?? "Listing AI photo analysis failed.");
+      }
+
+      const findingsByPhotoId = new Map(
+        result.findings.map((finding) => [finding.photoId, finding]),
+      );
+      const failuresByPhotoId = new Map(
+        result.failedPhotos.map((failure) => [failure.photoId, failure]),
+      );
+
+      updatePhotosById(
+        photosForAnalysis.map((photo) => {
+          const finding = findingsByPhotoId.get(photo.id);
+          if (finding) {
+            return applyVisionFindingToPhoto(photo, finding);
+          }
+
+          const failure = failuresByPhotoId.get(photo.id);
+          return {
+            ...photo,
+            analysisFailure: failure?.message ?? "Listing AI did not return a room classification for this photo.",
+            analysisStatus: "needs_review",
+            confidence: 0,
+            detectedRoomLabel: "Unknown" as const,
+            roomLabel: "Unknown" as const,
+          };
+        }),
+      );
+
+      if (result.failedPhotos.length > 0) {
+        setAnalysisError(
+          `${result.failedPhotos.length} photo${result.failedPhotos.length === 1 ? "" : "s"} need manual review before room-specific recommendations can be created.`,
+        );
+      }
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Listing AI photo analysis failed.";
+      setAnalysisError(message);
+      updatePhotosById(
+        photosForAnalysis.map((photo) => ({
+          ...photo,
+          analysisFailure: message,
+          analysisStatus: "needs_review",
+          confidence: 0,
+          detectedRoomLabel: "Unknown",
+          roomLabel: "Unknown",
+        })),
+      );
+    } finally {
+      setIsAnalyzingPhotos(false);
+    }
   }
 
   async function handleMainExteriorUpload(event: ChangeEvent<HTMLInputElement>) {
@@ -173,6 +298,7 @@ export default function ListingReadinessPage() {
     try {
       const uploadedPhoto = await prepareUploadedPhoto(file, {
         agentCorrectedClassification: true,
+        analysisStatus: "complete",
         classificationMode: "agent",
         confidence: 1,
         detectedRoomLabel: "Front Exterior",
@@ -203,6 +329,7 @@ export default function ListingReadinessPage() {
       );
 
       setPhotos((currentPhotos) => [...currentPhotos, ...uploadedPhotos]);
+      void analyzeUploadedPhotos(uploadedPhotos);
     } catch {
       showMessage("One or more photos could not be prepared for the PDF.");
     } finally {
@@ -267,7 +394,7 @@ export default function ListingReadinessPage() {
   }
 
   function downloadReport() {
-    if (isPreparingPhotos) {
+    if (isPreparingPhotos || isAnalyzingPhotos) {
       showMessage("Photos are still preparing for the PDF.");
       return;
     }
@@ -310,7 +437,7 @@ export default function ListingReadinessPage() {
                 max={workflowSteps.length}
                 value={workflowSteps.indexOf(activeStep) + 1}
               />
-              <div className="mt-4 grid gap-2 md:grid-cols-6">
+              <div className="mt-4 grid gap-2 md:grid-cols-3">
                 {workflowSteps.map((step) => (
                   <button
                     className={`rounded-lg border px-3 py-2 text-xs font-black ${
@@ -390,53 +517,53 @@ export default function ListingReadinessPage() {
               </LuxuryCard>
             )}
 
-            {activeStep === "Main Exterior Photo" && (
-              <LuxuryCard className="mt-6" tone="gold">
-                <SectionHeader
-                  eyebrow="Main Exterior Photo"
-                  title="Upload the cover hero image"
-                  subtitle="Upload the clearest front exterior photo of the home. This image will be used on the cover of the homeowner report."
-                />
-                <div className="mt-6 grid gap-5 md:grid-cols-[1fr_280px]">
-                  <label className="block rounded-xl border-2 border-dashed border-[#d4a017]/50 bg-white p-6">
-                    <span className="font-black text-[#082442]">Upload one main exterior photo</span>
-                    <span className="mt-2 block text-sm text-slate-600">
-                      Full front elevation, landscape orientation, minimal obstruction, and good lighting are preferred.
-                    </span>
-                    <input
-                      accept="image/jpeg,image/jpg,image/png,image/webp"
-                      className="mt-4 block w-full text-sm"
-                      disabled={isPreparingPhotos}
-                      onChange={handleMainExteriorUpload}
-                      type="file"
-                    />
-                  </label>
-                  <div className="rounded-xl bg-[#082442] p-5 text-white">
-                    <p className="text-xs font-black uppercase tracking-[0.2em] text-[#d4a017]">
-                      Example target
-                    </p>
-                    <ul className="mt-4 space-y-2 text-sm">
-                      <li>Full front elevation</li>
-                      <li>Landscape orientation preferred</li>
-                      <li>Driveway or front yard acceptable</li>
-                      <li>Minimal obstruction</li>
-                    </ul>
+            {activeStep === "Upload Photos" && (
+              <div className="mt-6 space-y-5">
+                <LuxuryCard tone="gold">
+                  <SectionHeader
+                    eyebrow="Main Home Photo"
+                    title="Upload the front exterior cover photo"
+                    subtitle="Use the actual front elevation of the home. Interior photos will not silently become the report cover."
+                  />
+                  <div className="mt-6 grid gap-5 md:grid-cols-[1fr_280px]">
+                    <label className="block rounded-xl border-2 border-dashed border-[#d4a017]/50 bg-white p-6">
+                      <span className="font-black text-[#082442]">Upload one front exterior photo</span>
+                      <span className="mt-2 block text-sm text-slate-600">
+                        Full home visible, straight perspective, good light, and landscape orientation are preferred.
+                      </span>
+                      <input
+                        accept="image/jpeg,image/jpg,image/png,image/webp"
+                        className="mt-4 block w-full text-sm"
+                        disabled={isPreparingPhotos}
+                        onChange={handleMainExteriorUpload}
+                        type="file"
+                      />
+                    </label>
+                    <div className="rounded-xl bg-[#082442] p-5 text-white">
+                      <p className="text-xs font-black uppercase tracking-[0.2em] text-[#d4a017]">
+                        Expected image
+                      </p>
+                      <ul className="mt-4 space-y-2 text-sm">
+                        <li>Front elevation of the subject property</li>
+                        <li>Most or all of the house visible</li>
+                        <li>Driveway or front yard is acceptable</li>
+                        <li>No interior room as automatic cover</li>
+                      </ul>
+                    </div>
                   </div>
-                </div>
-                {mainExteriorPhoto && (
-                  <div className="mt-5 flex flex-col gap-4 sm:flex-row">
-                    <div
-                      aria-label={mainExteriorPhoto.name}
-                      className="h-40 rounded-xl bg-cover bg-center sm:w-64"
-                      role="img"
-                      style={{ backgroundImage: `url(${mainExteriorPhoto.dataUrl})` }}
-                    />
-                    <div className="self-center">
-                      <ReportBadge tone="positive">Agent-selected cover</ReportBadge>
-                      <p className="mt-3 font-black text-[#082442]">{mainExteriorPhoto.name}</p>
-                      <div className="mt-3 flex gap-2">
+                  {mainExteriorPhoto && (
+                    <div className="mt-5 flex flex-col gap-4 sm:flex-row">
+                      <div
+                        aria-label={mainExteriorPhoto.name}
+                        className="h-40 rounded-xl bg-cover bg-center sm:w-64"
+                        role="img"
+                        style={{ backgroundImage: `url(${mainExteriorPhoto.dataUrl})` }}
+                      />
+                      <div className="self-center">
+                        <ReportBadge tone="positive">Cover photo selected</ReportBadge>
+                        <p className="mt-3 font-black text-[#082442]">{mainExteriorPhoto.name}</p>
                         <button
-                          className="rounded-lg border border-red-200 bg-white px-4 py-2 text-sm font-black text-red-700"
+                          className="mt-3 rounded-lg border border-red-200 bg-white px-4 py-2 text-sm font-black text-red-700"
                           onClick={() => setMainExteriorPhoto(null)}
                           type="button"
                         >
@@ -444,56 +571,90 @@ export default function ListingReadinessPage() {
                         </button>
                       </div>
                     </div>
-                  </div>
-                )}
-              </LuxuryCard>
-            )}
-
-            {activeStep === "Upload Property Photos" && (
-              <LuxuryCard className="mt-6">
-                <SectionHeader
-                  eyebrow="Property Photos"
-                  title="Bulk upload remaining photos"
-                  subtitle="Upload the remaining property photos in any order. Listing AI will organize them by room."
-                />
-                <label className="mt-6 block rounded-xl border-2 border-dashed border-slate-300 p-6 text-center">
-                  <span className="font-black text-[#082442]">Upload Property Photos</span>
-                  <input
-                    accept="image/jpeg,image/jpg,image/png,image/webp"
-                    className="mt-4 block w-full rounded-lg border border-slate-200 bg-white px-3 py-3 text-sm"
-                    disabled={isPreparingPhotos}
-                    multiple
-                    onChange={handlePhotoUpload}
-                    type="file"
-                  />
-                  {isPreparingPhotos && (
-                    <span className="mt-2 block text-sm font-bold text-[#9a7100]">
-                      Processing uploaded photos...
-                    </span>
                   )}
-                </label>
-                <p className="mt-3 text-sm font-semibold text-slate-600">
-                  {photos.length} bulk photo{photos.length === 1 ? "" : "s"} uploaded.
-                </p>
-              </LuxuryCard>
+                </LuxuryCard>
+
+                <LuxuryCard>
+                  <SectionHeader
+                    eyebrow="All Other Property Photos"
+                    title="Bulk upload room and property photos"
+                    subtitle="Upload the remaining JPG, JPEG, PNG, or WebP photos in any order. Listing AI analysis starts automatically after upload."
+                  />
+                  <label className="mt-6 block rounded-xl border-2 border-dashed border-slate-300 p-6 text-center">
+                    <span className="font-black text-[#082442]">Upload Property Photos</span>
+                    <input
+                      accept="image/jpeg,image/jpg,image/png,image/webp"
+                      className="mt-4 block w-full rounded-lg border border-slate-200 bg-white px-3 py-3 text-sm"
+                      disabled={isPreparingPhotos || isAnalyzingPhotos}
+                      multiple
+                      onChange={handlePhotoUpload}
+                      type="file"
+                    />
+                    {isPreparingPhotos && (
+                      <span className="mt-2 block text-sm font-bold text-[#9a7100]">
+                        Preparing uploaded photos...
+                      </span>
+                    )}
+                    {isAnalyzingPhotos && (
+                      <span className="mt-2 block text-sm font-bold text-[#9a7100]">
+                        Analyzing {photos.filter((photo) => photo.analysisStatus === "analyzing").length || photos.length} property photos...
+                      </span>
+                    )}
+                  </label>
+                  {analysisError && (
+                    <p className="mt-4 rounded-xl bg-[#fffaf0] p-4 text-sm font-semibold text-[#9a7100]">
+                      {analysisError}
+                    </p>
+                  )}
+                  <div className="mt-5 grid grid-cols-2 gap-4 md:grid-cols-4">
+                    {photos.map((photo) => (
+                      <div className="rounded-xl border bg-slate-50 p-3" key={photo.id}>
+                        <div
+                          aria-label={photo.name}
+                          className="aspect-[4/3] rounded-lg bg-cover bg-center"
+                          role="img"
+                          style={{ backgroundImage: `url(${photo.dataUrl})` }}
+                        />
+                        <p className="mt-3 truncate text-sm font-black text-[#082442]">
+                          {photo.name}
+                        </p>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          <ReportBadge
+                            tone={
+                              photo.analysisStatus === "complete"
+                                ? "positive"
+                                : photo.analysisStatus === "needs_review"
+                                  ? "gold"
+                                  : "muted"
+                            }
+                          >
+                            {photo.analysisStatus === "complete"
+                              ? photo.roomLabel
+                              : photo.analysisStatus === "needs_review"
+                                ? "Needs Review"
+                                : photo.analysisStatus === "analyzing"
+                                  ? "Analyzing"
+                                  : "Pending"}
+                          </ReportBadge>
+                          {photo.confidence ? (
+                            <ReportBadge>{Math.round(photo.confidence * 100)}%</ReportBadge>
+                          ) : null}
+                        </div>
+                        <button
+                          className="mt-3 rounded-lg border border-red-200 bg-white px-3 py-2 text-sm font-black text-red-700"
+                          onClick={() => removePhoto(photo.id)}
+                          type="button"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </LuxuryCard>
+              </div>
             )}
 
-            {activeStep === "AI Organizes Photos" && (
-              <LuxuryCard className="mt-6" tone="navy">
-                <SectionHeader
-                  eyebrow="AI Organizes Photos"
-                  title="Classification is ready for review"
-                  subtitle="Live Listing AI analysis is not active in this test route yet. These local classifications are a clearly labeled manual fallback based on filenames and later agent corrections."
-                />
-                <div className="mt-6 grid gap-3 md:grid-cols-3">
-                  <ReportBadge tone="gold">Fallback/manual mode</ReportBadge>
-                  <ReportBadge tone="positive">{summary.groupedRoomPhotos.length} room groups</ReportBadge>
-                  <ReportBadge>{reportPhotos.length} total photos</ReportBadge>
-                </div>
-              </LuxuryCard>
-            )}
-
-            {activeStep === "Review & Correct" && (
+            {activeStep === "Review & Generate Report" && (
               <LuxuryCard className="mt-6">
                 <SectionHeader
                   action={
@@ -506,9 +667,19 @@ export default function ListingReadinessPage() {
                     </button>
                   }
                   eyebrow="Photo Review"
-                  title="Review and correct photo organization"
-                  subtitle="Groups are generated by the current fallback classifier. Correct any room labels, choose preferred report photos, and exclude anything that should not appear in the report."
+                  title="Review room analysis and recommendations"
+                  subtitle="Each recommendation is connected to the analyzed room photo that caused it. Unknown photos stay in Needs Review until corrected."
                 />
+                {isAnalyzingPhotos && (
+                  <p className="mt-4 rounded-xl bg-[#fffaf0] p-4 text-sm font-semibold text-[#9a7100]">
+                    Analyzing {photos.filter((photo) => photo.analysisStatus === "analyzing").length || photos.length} property photos...
+                  </p>
+                )}
+                {analysisError && (
+                  <p className="mt-4 rounded-xl bg-[#fffaf0] p-4 text-sm font-semibold text-[#9a7100]">
+                    {analysisError}
+                  </p>
+                )}
                 <div className="mt-5 grid gap-3 md:grid-cols-4">
                   {summary.coverageSummary.map((item) => (
                     <div className="rounded-xl border bg-slate-50 p-3" key={item.label}>
@@ -538,6 +709,47 @@ export default function ListingReadinessPage() {
                   </p>
                 )}
                 <div className="mt-6 space-y-6">
+                  {photos.filter((photo) => photo.analysisStatus === "needs_review" || photo.roomLabel === "Unknown").length > 0 && (
+                    <div>
+                      <h3 className="mb-3 text-lg font-black text-[#082442]">Needs Review</h3>
+                      <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
+                        {photos
+                          .filter((photo) => photo.analysisStatus === "needs_review" || photo.roomLabel === "Unknown")
+                          .map((photo) => (
+                            <div className="rounded-xl border border-[#d4a017]/40 bg-[#fffaf0] p-3" key={photo.id}>
+                              <div
+                                aria-label={photo.name}
+                                className="aspect-[4/3] rounded-lg bg-cover bg-center"
+                                role="img"
+                                style={{ backgroundImage: `url(${photo.dataUrl})` }}
+                              />
+                              <p className="mt-3 truncate text-sm font-black text-[#082442]">{photo.name}</p>
+                              <p className="mt-2 text-xs font-semibold text-[#9a7100]">
+                                {photo.analysisFailure ?? "Assign a room before room-specific recommendations can be created."}
+                              </p>
+                              <label className="mt-3 block">
+                                <span className="mb-1 block text-xs font-bold uppercase text-slate-500">
+                                  Room / Category
+                                </span>
+                                <select
+                                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                                  onChange={(event) =>
+                                    updatePhotoRoom(photo.id, event.target.value as RoomLabel)
+                                  }
+                                  value={photo.roomLabel}
+                                >
+                                  {reviewRoomLabels.map((room) => (
+                                    <option key={room} value={room}>
+                                      {room}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+                  )}
                   {summary.groupedRoomPhotos.map((group) => (
                     <div key={group.room}>
                       <div className="mb-3 flex items-center justify-between">
@@ -560,7 +772,11 @@ export default function ListingReadinessPage() {
                             </p>
                             <div className="mt-2 flex flex-wrap gap-2">
                               <ReportBadge tone={photo.classificationMode === "manual_fallback" ? "gold" : "positive"}>
-                                {photo.classificationMode === "manual_fallback" ? "Fallback classification" : "Agent corrected"}
+                                {photo.classificationMode === "ai"
+                                  ? "AI classified"
+                                  : photo.classificationMode === "agent"
+                                    ? "Agent corrected"
+                                    : "Needs Review"}
                               </ReportBadge>
                               <ReportBadge>{Math.round((photo.confidence ?? 0) * 100)}%</ReportBadge>
                             </div>
@@ -618,22 +834,63 @@ export default function ListingReadinessPage() {
                     </div>
                   ))}
                 </div>
-              </LuxuryCard>
-            )}
-
-            {activeStep === "Generate Report" && (
-              <LuxuryCard className="mt-6" tone="gold">
-                <SectionHeader
-                  eyebrow="Generate Report"
-                  title="Structured report data is ready"
-                  subtitle="The PDF receives resolved photos, room groups, coverage, corrections, and confidence values. Missing photos do not block report generation."
-                />
-                <div className="mt-5 grid gap-3 md:grid-cols-3">
-                  <ReportBadge tone={summary.propertyHeroPhoto.photo ? "positive" : "muted"}>
-                    {summary.propertyHeroPhoto.photo ? "Hero photo ready" : "Hero unavailable"}
-                  </ReportBadge>
-                  <ReportBadge>{summary.groupedRoomPhotos.length} grouped rooms</ReportBadge>
-                  <ReportBadge>{summary.missingRooms.length} coverage notes</ReportBadge>
+                <div className="mt-8">
+                  <h3 className="text-lg font-black text-[#082442]">Photo-backed recommendations</h3>
+                  <div className="mt-4 space-y-4">
+                    {photoBackedRecommendations.length === 0 ? (
+                      <p className="rounded-xl bg-slate-50 p-4 text-sm font-semibold text-slate-600">
+                        No room-specific recommendations are ready yet. Upload room photos and complete analysis, or correct Needs Review photos with visible issues.
+                      </p>
+                    ) : (
+                      photoBackedRecommendations.map((item) => {
+                        const active = selected.includes(item.id);
+                        return (
+                          <div
+                            className="grid gap-4 rounded-xl border bg-white p-4 shadow-sm md:grid-cols-[160px_1fr_130px]"
+                            key={item.id}
+                          >
+                            {item.sourcePhoto && (
+                              <div
+                                aria-label={item.sourcePhoto.name}
+                                className="aspect-[4/3] rounded-lg bg-cover bg-center"
+                                role="img"
+                                style={{ backgroundImage: `url(${item.sourcePhoto.dataUrl})` }}
+                              />
+                            )}
+                            <div>
+                              <div className="flex flex-wrap gap-2">
+                                <ReportBadge>{item.room}</ReportBadge>
+                                <ReportBadge>{item.detectedCategory ?? item.room}</ReportBadge>
+                                {item.confidence ? (
+                                  <ReportBadge>{Math.round(item.confidence * 100)}% confidence</ReportBadge>
+                                ) : null}
+                              </div>
+                              <h4 className="mt-3 text-lg font-black text-[#082442]">{item.title}</h4>
+                              <p className="mt-1 text-sm text-slate-600">{item.description}</p>
+                              <p className="mt-3 text-sm text-slate-600">
+                                <strong>Why it matters:</strong> {item.whyItMatters}
+                              </p>
+                            </div>
+                            <div className="flex flex-col justify-between gap-3">
+                              <div className="space-y-2 text-sm font-bold">
+                                <div className="text-emerald-700">+{item.points} points</div>
+                                <div>{item.difficulty}</div>
+                                <div>{item.time}</div>
+                              </div>
+                              <label className="flex items-center gap-2 text-sm font-black">
+                                <input
+                                  checked={active}
+                                  onChange={() => toggleRecommendation(item.id)}
+                                  type="checkbox"
+                                />
+                                Include
+                              </label>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
                 </div>
               </LuxuryCard>
             )}
@@ -672,11 +929,11 @@ export default function ListingReadinessPage() {
               </button>
               <button
                 className="rounded-lg bg-[#082442] px-5 py-3 font-bold text-white"
-                disabled={isPreparingPhotos}
+                disabled={isPreparingPhotos || isAnalyzingPhotos}
                 onClick={downloadReport}
                 type="button"
               >
-                {isPreparingPhotos ? "Preparing Photos..." : "Download Test PDF"}
+                {isPreparingPhotos || isAnalyzingPhotos ? "Preparing Photos..." : "Download Test PDF"}
               </button>
             </div>
           </div>
@@ -743,11 +1000,11 @@ export default function ListingReadinessPage() {
               </button>
               <button
                 className="rounded-lg bg-[#082442] px-5 py-3 font-bold text-white"
-                disabled={isPreparingPhotos}
+                disabled={isPreparingPhotos || isAnalyzingPhotos}
                 onClick={downloadReport}
                 type="button"
               >
-                {isPreparingPhotos ? "Preparing Photos..." : "Download Homeowner Report"}
+                {isPreparingPhotos || isAnalyzingPhotos ? "Preparing Photos..." : "Download Homeowner Report"}
               </button>
             </div>
           </header>
@@ -800,7 +1057,7 @@ export default function ListingReadinessPage() {
                   onClick={downloadReport}
                   type="button"
                 >
-                  {isPreparingPhotos ? "Preparing Photos..." : "Download Full Report"}
+                  {isPreparingPhotos || isAnalyzingPhotos ? "Preparing Photos..." : "Download Full Report"}
                 </button>
               </div>
             </div>
@@ -838,12 +1095,29 @@ export default function ListingReadinessPage() {
                 update automatically.
               </p>
               <div className="mt-5 divide-y">
-                {improvements.map((item, index) => {
+                {photoBackedRecommendations.length === 0 && (
+                  <div className="rounded-xl bg-slate-50 p-5 text-sm font-semibold text-slate-600">
+                    Upload and analyze property photos to create room-specific,
+                    photo-backed recommendations. Photos marked Needs Review do
+                    not create detailed recommendations until a room is identified.
+                  </div>
+                )}
+                {photoBackedRecommendations.map((item, index) => {
                   const active = selected.includes(item.id);
 
                   return (
                     <div key={item.id}>
-                      <div className="grid gap-3 py-4 md:grid-cols-[48px_1fr_110px_95px] md:items-center">
+                      <div className="grid gap-3 py-4 md:grid-cols-[92px_48px_1fr_110px_95px] md:items-center">
+                        {item.sourcePhoto ? (
+                          <div
+                            aria-label={item.sourcePhoto.name}
+                            className="aspect-[4/3] rounded-lg bg-cover bg-center"
+                            role="img"
+                            style={{ backgroundImage: `url(${item.sourcePhoto.dataUrl})` }}
+                          />
+                        ) : (
+                          <div className="aspect-[4/3] rounded-lg bg-slate-100" />
+                        )}
                         <button
                           aria-label={`${active ? "Remove" : "Select"} ${item.title}`}
                           className={`grid h-9 w-9 place-items-center rounded-full font-black text-white ${
@@ -864,6 +1138,10 @@ export default function ListingReadinessPage() {
                           <span className="block font-black">{item.title}</span>
                           <span className="text-sm text-slate-500">
                             {item.room} | {item.description}
+                          </span>
+                          <span className="mt-1 block text-xs font-bold uppercase text-slate-400">
+                            {item.detectedCategory ?? item.room}
+                            {item.confidence ? ` | ${Math.round(item.confidence * 100)}% confidence` : ""}
                           </span>
                         </button>
                         <div className="font-black text-emerald-600">
@@ -906,11 +1184,11 @@ export default function ListingReadinessPage() {
                 </div>
                 <button
                   className="rounded-lg bg-[#082442] px-5 py-3 font-bold text-white"
-                  disabled={isPreparingPhotos}
+                  disabled={isPreparingPhotos || isAnalyzingPhotos}
                   onClick={downloadReport}
                   type="button"
                 >
-                  {isPreparingPhotos ? "Preparing Photos..." : "Create PDF Report"}
+                  {isPreparingPhotos || isAnalyzingPhotos ? "Preparing Photos..." : "Create PDF Report"}
                 </button>
               </div>
             </div>

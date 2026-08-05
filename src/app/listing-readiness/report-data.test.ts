@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildReadinessSummary,
+  buildPhotoBackedRecommendations,
   calculatePhotoCoverage,
   calculateReadiness,
   chooseCoverPhoto,
@@ -32,6 +33,22 @@ function landscapePhoto(id: string, roomLabel: UploadedPhoto["roomLabel"]): Uplo
     ...photo(id, roomLabel),
     height: 900,
     width: 1600,
+  };
+}
+
+function analyzedPhoto(
+  id: string,
+  roomLabel: UploadedPhoto["roomLabel"],
+  visibleFindings: string[],
+): UploadedPhoto {
+  return {
+    ...photo(id, roomLabel),
+    analysisStatus: "complete",
+    classificationMode: "ai",
+    condition: "Average",
+    confidence: 0.92,
+    detectedRoomLabel: roomLabel,
+    visibleFindings,
   };
 }
 
@@ -212,8 +229,8 @@ describe("listing readiness report data", () => {
 
   it("stores fallback classification results and groups photos by room", () => {
     const photos = [
-      { ...photo("bright-kitchen-island", "Unknown"), name: "bright-kitchen-island.jpg" },
-      { ...photo("living-room", "Unknown"), name: "living-room.jpg" },
+      { ...photo("bright-kitchen-island", "Unknown"), classificationMode: "manual_fallback" as const, name: "bright-kitchen-island.jpg" },
+      { ...photo("living-room", "Unknown"), classificationMode: "manual_fallback" as const, name: "living-room.jpg" },
     ];
     const groups = groupRoomPhotos(photos);
 
@@ -277,5 +294,73 @@ describe("listing readiness report data", () => {
     expect(summary.bestLivingRoomPhoto?.id).toBe("living");
     expect(summary.groupedRoomPhotos.length).toBeGreaterThan(0);
     expect(summary.missingRooms).toContain("Bathrooms detected");
+  });
+
+  it("creates room-specific recommendations with their source photo", () => {
+    const recommendations = buildPhotoBackedRecommendations([
+      analyzedPhoto("kitchen-source", "Kitchen", [
+        "clutter on kitchen counters",
+        "small appliances crowd the prep surface",
+      ]),
+    ]);
+
+    expect(recommendations.length).toBeGreaterThan(0);
+    expect(recommendations[0]?.room).toBe("Kitchen");
+    expect(recommendations[0]?.sourcePhoto?.id).toBe("kitchen-source");
+    expect(recommendations[0]?.detectedCategory).toBe("Kitchen");
+  });
+
+  it("does not generate detailed recommendations for Unknown photos", () => {
+    const recommendations = buildPhotoBackedRecommendations([
+      analyzedPhoto("unknown-source", "Unknown", ["visible clutter"]),
+    ]);
+
+    expect(recommendations).toEqual([]);
+  });
+
+  it("keeps exterior recommendations isolated from kitchen and interior recommendations", () => {
+    const recommendations = buildPhotoBackedRecommendations([
+      analyzedPhoto("front-source", "Front Exterior", [
+        "discoloration on front walkway",
+        "entry surface needs cleaning",
+      ]),
+    ]);
+
+    expect(recommendations.length).toBeGreaterThan(0);
+    expect(recommendations.every((item) => item.room === "Front Exterior")).toBe(true);
+    expect(recommendations.some((item) => item.title.toLowerCase().includes("kitchen"))).toBe(false);
+  });
+
+  it("uses an agent room correction for recommendation mapping", () => {
+    const recommendations = buildPhotoBackedRecommendations([
+      {
+        ...analyzedPhoto("corrected", "Kitchen", ["clutter on kitchen counters"]),
+        agentCorrectedClassification: true,
+        classificationMode: "agent",
+        detectedRoomLabel: "Living Room",
+      },
+    ]);
+
+    expect(recommendations[0]?.room).toBe("Kitchen");
+    expect(recommendations[0]?.sourcePhoto?.id).toBe("corrected");
+  });
+
+  it("passes recommendation inclusion state and source photos to the PDF summary", () => {
+    const sourcePhoto = analyzedPhoto("bath-source", "Bathroom", [
+      "items crowd the vanity counter",
+      "mirror area appears visually busy",
+    ]);
+    const recommendations = buildPhotoBackedRecommendations([sourcePhoto]);
+    const selectedId = recommendations[0]?.id;
+    const summary = buildReadinessSummary(
+      selectedId ? [selectedId] : [],
+      [sourcePhoto],
+      defaultProperty,
+      { recommendations },
+    );
+
+    expect(summary.selectedRecommendations).toHaveLength(selectedId ? 1 : 0);
+    expect(summary.selectedRecommendations[0]?.sourcePhoto?.id).toBe("bath-source");
+    expect(summary.roomOverviews.every((room) => room.room !== "Unknown")).toBe(true);
   });
 });

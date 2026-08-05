@@ -30,13 +30,16 @@ export function createListingReadinessPdf(
     unit: "mm",
   });
   const context = { doc, pageNumber: 1, preparedDate: preparedDate() };
+  const detailedRooms = summary.roomOverviews.filter(
+    (room) => room.photo && room.recommendations.length > 0,
+  );
   const kitchen =
-    summary.roomOverviews.find((room) => room.room === "Kitchen") ??
-    summary.roomOverviews.find((room) => room.photo) ??
+    detailedRooms.find((room) => room.room === "Kitchen") ??
+    detailedRooms[0] ??
     summary.roomOverviews[0];
   const secondary =
+    detailedRooms.find((room) => room.room !== kitchen?.room) ??
     summary.secondaryDetailRoom ??
-    summary.roomOverviews.find((room) => room.room !== kitchen?.room) ??
     kitchen;
 
   PdfCover(context, property, summary);
@@ -47,9 +50,13 @@ export function createListingReadinessPdf(
   context.pageNumber = 4;
   PdfRoomOverview(context, summary);
   context.pageNumber = 5;
-  PdfRoomAnalysis(context, kitchen, summary.selectedRecommendations, "Key Room");
+  if (kitchen) {
+    PdfRoomAnalysis(context, kitchen, summary.selectedRecommendations, "Key Room");
+  }
   context.pageNumber = 6;
-  PdfRoomAnalysis(context, secondary, summary.selectedRecommendations, "Secondary Room");
+  if (secondary) {
+    PdfRoomAnalysis(context, secondary, summary.selectedRecommendations, "Secondary Room");
+  }
   context.pageNumber = 7;
   PdfImprovementPlan(context, summary);
   context.pageNumber = 8;
