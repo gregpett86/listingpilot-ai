@@ -15,10 +15,16 @@ export type Improvement = {
 
 export type PropertyDetails = {
   address: string;
+  basement: string;
   cityStateZip: string;
+  city: string;
   beds: string;
   baths: string;
+  garageCount: string;
+  pool: string;
+  propertyType: string;
   sqft: string;
+  state: string;
   homeownerName: string;
   agentName: string;
   brokerage: string;
@@ -26,12 +32,19 @@ export type PropertyDetails = {
   agentEmail: string;
   agentWebsite: string;
   agentHeadshotDataUrl: string;
+  zip: string;
 };
 
 export type UploadedPhoto = {
+  agentCorrectedClassification?: boolean;
+  classificationMode?: "ai" | "manual_fallback" | "agent";
+  confidence?: number;
+  detectedRoomLabel?: RoomLabel;
   height?: number;
   id: string;
+  includedInReport?: boolean;
   isCoverPreferred?: boolean;
+  isBestRoomPhoto?: boolean;
   name: string;
   dataUrl: string;
   roomLabel: RoomLabel;
@@ -79,17 +92,45 @@ export type PropertyHeroPhoto = {
 
 export type RoomLabel =
   | "Cover"
+  | "Front Exterior"
+  | "Rear Exterior"
+  | "Side Exterior"
   | "Exterior"
   | "Kitchen"
   | "Living Room"
+  | "Bedroom"
   | "Primary Bedroom"
   | "Primary Bathroom"
   | "Bathroom"
   | "Dining Room"
+  | "Office"
+  | "Laundry Room"
   | "Backyard"
   | "Garage"
   | "Basement"
+  | "Pool"
+  | "Patio"
+  | "Landscaping"
+  | "Hallway"
+  | "Stairs"
+  | "Unknown"
   | "Other";
+
+export type CoverageStatus = "Complete" | "Partial" | "Missing" | "Not Applicable";
+
+export type CoverageItem = {
+  actual: number;
+  expected: number;
+  label: string;
+  missingCount: number;
+  status: CoverageStatus;
+};
+
+export type RoomPhotoGroup = {
+  bestPhoto?: UploadedPhoto;
+  photos: UploadedPhoto[];
+  room: RoomLabel | string;
+};
 
 export type CategoryScore = {
   name: string;
@@ -119,7 +160,15 @@ export type ReadinessSummary = {
   roomOverviews: RoomOverview[];
   photos: UploadedPhoto[];
   coverPhoto?: UploadedPhoto;
+  bestBathroomPhoto?: UploadedPhoto;
+  bestExteriorPhoto?: UploadedPhoto;
+  bestKitchenPhoto?: UploadedPhoto;
+  bestLivingRoomPhoto?: UploadedPhoto;
+  bestPrimaryBedroomPhoto?: UploadedPhoto;
   executivePhoto?: UploadedPhoto;
+  coverageSummary: CoverageItem[];
+  groupedRoomPhotos: RoomPhotoGroup[];
+  missingRooms: string[];
   strongestPhoto?: UploadedPhoto;
   kitchenPhoto?: UploadedPhoto;
   marketingPhoto?: UploadedPhoto;
@@ -130,17 +179,54 @@ export type ReadinessSummary = {
 export const baseScore = 62;
 
 export const roomLabels: RoomLabel[] = [
-  "Cover",
-  "Exterior",
+  "Front Exterior",
+  "Rear Exterior",
+  "Side Exterior",
   "Kitchen",
   "Living Room",
-  "Primary Bedroom",
-  "Bathroom",
   "Dining Room",
+  "Primary Bedroom",
+  "Bedroom",
+  "Bathroom",
+  "Office",
+  "Laundry Room",
   "Backyard",
   "Garage",
   "Basement",
+  "Pool",
+  "Patio",
+  "Landscaping",
+  "Hallway",
+  "Stairs",
   "Other",
+  "Unknown",
+  "Cover",
+  "Exterior",
+  "Primary Bathroom",
+];
+
+export const reviewRoomLabels: RoomLabel[] = [
+  "Front Exterior",
+  "Rear Exterior",
+  "Side Exterior",
+  "Kitchen",
+  "Living Room",
+  "Dining Room",
+  "Primary Bedroom",
+  "Bedroom",
+  "Bathroom",
+  "Office",
+  "Laundry Room",
+  "Backyard",
+  "Garage",
+  "Basement",
+  "Pool",
+  "Patio",
+  "Landscaping",
+  "Hallway",
+  "Stairs",
+  "Other",
+  "Unknown",
 ];
 
 export const improvements: Improvement[] = [
@@ -285,9 +371,15 @@ export const marketingHighlights = [
 export const defaultProperty: PropertyDetails = {
   address: "1234 Oak Ridge Drive",
   cityStateZip: "Dallas, TX 75230",
+  city: "Dallas",
   beds: "5",
   baths: "3",
+  basement: "No",
+  garageCount: "2",
   sqft: "2,842",
+  pool: "No",
+  propertyType: "Single Family",
+  state: "TX",
   homeownerName: "",
   agentName: "Your Real Estate Professional",
   brokerage: "Realty Edge Pro",
@@ -295,30 +387,49 @@ export const defaultProperty: PropertyDetails = {
   agentEmail: "agent@example.com",
   agentWebsite: "realtyedgepro.com",
   agentHeadshotDataUrl: "",
+  zip: "75230",
 };
 
 const roomBaseScores: Record<RoomLabel, number> = {
   Cover: 70,
+  "Front Exterior": 72,
+  "Rear Exterior": 70,
+  "Side Exterior": 68,
   Exterior: 70,
   Kitchen: 74,
   "Living Room": 76,
+  Bedroom: 71,
   "Primary Bedroom": 72,
   "Primary Bathroom": 69,
   Bathroom: 68,
   "Dining Room": 71,
+  Office: 70,
+  "Laundry Room": 66,
   Backyard: 73,
   Garage: 68,
   Basement: 67,
+  Pool: 72,
+  Patio: 72,
+  Landscaping: 69,
+  Hallway: 66,
+  Stairs: 66,
+  Unknown: 64,
   Other: 70,
 };
 
 export function formatFieldLabel(key: keyof PropertyDetails) {
   const labels: Record<keyof PropertyDetails, string> = {
     address: "Property Address",
+    basement: "Basement",
+    city: "City",
     cityStateZip: "City/State/ZIP",
     beds: "Beds",
     baths: "Baths",
+    garageCount: "Garage Count",
+    pool: "Pool",
+    propertyType: "Property Type",
     sqft: "Square Feet",
+    state: "State",
     homeownerName: "Homeowner Name",
     agentName: "Agent Name",
     brokerage: "Brokerage",
@@ -326,6 +437,7 @@ export function formatFieldLabel(key: keyof PropertyDetails) {
     agentEmail: "Agent Email",
     agentWebsite: "Website",
     agentHeadshotDataUrl: "Agent Headshot",
+    zip: "ZIP",
   };
 
   return labels[key];
@@ -365,15 +477,28 @@ export function calculateReadiness(selectedIds: number[]) {
 export function inferRoomFromFilename(name: string): RoomLabel {
   const normalized = name.toLowerCase();
 
-  if (/front|exterior|entry|facade|curb/.test(normalized)) return "Exterior";
+  if (/front|facade|curb|front elevation/.test(normalized)) return "Front Exterior";
+  if (/rear|back exterior|back elevation/.test(normalized)) return "Rear Exterior";
+  if (/side exterior|side elevation/.test(normalized)) return "Side Exterior";
+  if (/exterior|entry/.test(normalized)) return "Front Exterior";
   if (/kitchen|island/.test(normalized)) return "Kitchen";
   if (/living|family|great-room|great room/.test(normalized)) return "Living Room";
-  if (/bath|vanity|shower/.test(normalized)) return "Primary Bathroom";
-  if (/primary|master|bedroom/.test(normalized)) return "Primary Bedroom";
+  if (/primary|master/.test(normalized) && /bed|bedroom|suite/.test(normalized)) return "Primary Bedroom";
+  if (/bed|bedroom/.test(normalized)) return "Bedroom";
+  if (/bath|vanity|shower/.test(normalized)) return "Bathroom";
   if (/dining/.test(normalized)) return "Dining Room";
+  if (/office|study/.test(normalized)) return "Office";
+  if (/laundry|mudroom/.test(normalized)) return "Laundry Room";
+  if (/garage|carport/.test(normalized)) return "Garage";
+  if (/basement|lower level/.test(normalized)) return "Basement";
+  if (/pool|spa/.test(normalized)) return "Pool";
+  if (/patio|terrace|deck/.test(normalized)) return "Patio";
+  if (/landscap|lawn|garden/.test(normalized)) return "Landscaping";
+  if (/hall|hallway|corridor/.test(normalized)) return "Hallway";
+  if (/stair|stairs|staircase/.test(normalized)) return "Stairs";
   if (/yard|patio|terrace|pool|garden/.test(normalized)) return "Backyard";
 
-  return "Other";
+  return "Unknown";
 }
 
 function normalizedPhotoName(photo: UploadedPhoto) {
@@ -386,6 +511,46 @@ export function isUsableImageDataUrl(dataUrl: string) {
 
 export function validUploadedPhotos(photos: UploadedPhoto[]) {
   return photos.filter((photo) => isUsableImageDataUrl(photo.dataUrl));
+}
+
+export function isIncludedReportPhoto(photo: UploadedPhoto) {
+  return photo.includedInReport !== false && isUsableImageDataUrl(photo.dataUrl);
+}
+
+export function photoReportRoom(photo: UploadedPhoto) {
+  return photo.roomLabel === "Cover"
+    ? "Front Exterior"
+    : photo.roomLabel === "Exterior"
+      ? "Front Exterior"
+      : photo.roomLabel;
+}
+
+export function applyFallbackPhotoClassification(photo: UploadedPhoto): UploadedPhoto {
+  if (photo.classificationMode === "ai" || photo.agentCorrectedClassification) {
+    return photo;
+  }
+
+  const detectedRoomLabel =
+    photo.detectedRoomLabel && photo.detectedRoomLabel !== "Unknown"
+      ? photo.detectedRoomLabel
+      : inferRoomFromFilename(photo.name);
+  const confidence = detectedRoomLabel === "Unknown" ? 0.35 : 0.62;
+
+  return {
+    ...photo,
+    classificationMode: photo.classificationMode ?? "manual_fallback",
+    confidence: photo.confidence ?? confidence,
+    detectedRoomLabel,
+    includedInReport: photo.includedInReport ?? true,
+    roomLabel:
+      photo.roomLabel === "Other" || photo.roomLabel === "Unknown"
+        ? detectedRoomLabel
+        : photo.roomLabel,
+  };
+}
+
+export function normalizeReportPhotos(photos: UploadedPhoto[]) {
+  return photos.map(applyFallbackPhotoClassification);
 }
 
 export function classifyUploadedPhotoForHero(photo: UploadedPhoto): UploadedPhotoClassification {
@@ -424,11 +589,15 @@ export function classifyUploadedPhotoForHero(photo: UploadedPhoto): UploadedPhot
 
   if (
     photo.roomLabel === "Exterior" ||
+    photo.roomLabel === "Front Exterior" ||
     photo.roomLabel === "Cover" ||
     /front|facade|facade|elevation|curb|driveway|entry|exterior|street view/.test(normalized)
   ) {
     const fullHouseCue = /front|facade|facade|elevation|curb|driveway/.test(normalized);
-    const manualExteriorCue = photo.roomLabel === "Exterior" || photo.roomLabel === "Cover";
+    const manualExteriorCue =
+      photo.roomLabel === "Exterior" ||
+      photo.roomLabel === "Front Exterior" ||
+      photo.roomLabel === "Cover";
     return {
       confidence: fullHouseCue ? 0.92 : manualExteriorCue ? 0.82 : 0.76,
       exteriorScore:
@@ -531,33 +700,38 @@ export function chooseCoverPhoto(photos: UploadedPhoto[]) {
 }
 
 export function chooseInteriorPhoto(photos: UploadedPhoto[]) {
-  const validPhotos = validUploadedPhotos(photos);
+  const validPhotos = normalizeReportPhotos(photos).filter(isIncludedReportPhoto);
 
   return (
     validPhotos.find((photo) => photo.roomLabel === "Kitchen") ??
     validPhotos.find((photo) => photo.roomLabel === "Living Room") ??
     validPhotos.find((photo) => photo.roomLabel === "Primary Bedroom") ??
-    validPhotos[0]
+    validPhotos.find((photo) => photo.roomLabel === "Bedroom")
   );
 }
 
 export function chooseStrongestPhoto(photos: UploadedPhoto[]) {
+  const validPhotos = normalizeReportPhotos(photos).filter(isIncludedReportPhoto);
+
   return (
-    photos.find((photo) => photo.roomLabel === "Kitchen") ??
-    chooseCoverPhoto(photos) ??
-    chooseInteriorPhoto(photos)
+    validPhotos.find((photo) => photo.roomLabel === "Kitchen") ??
+    chooseInteriorPhoto(validPhotos) ??
+    chooseCoverPhoto(validPhotos)
   );
 }
 
 export function chooseMarketingPhoto(photos: UploadedPhoto[]) {
-  const validPhotos = validUploadedPhotos(photos);
+  const validPhotos = normalizeReportPhotos(photos).filter(isIncludedReportPhoto);
   const coverPhoto = chooseCoverPhoto(validPhotos);
   const preferredRooms: RoomLabel[] = [
     "Backyard",
+    "Patio",
+    "Pool",
     "Living Room",
     "Primary Bedroom",
+    "Bedroom",
     "Kitchen",
-    "Exterior",
+    "Front Exterior",
   ];
 
   for (const room of preferredRooms) {
@@ -569,6 +743,104 @@ export function chooseMarketingPhoto(photos: UploadedPhoto[]) {
   }
 
   return validPhotos.find((photo) => photo.id !== coverPhoto?.id) ?? coverPhoto;
+}
+
+function roomMatches(photo: UploadedPhoto, rooms: RoomLabel[]) {
+  return rooms.includes(photoReportRoom(photo) as RoomLabel);
+}
+
+export function chooseBestRoomPhoto(
+  photos: UploadedPhoto[],
+  rooms: RoomLabel[],
+) {
+  const matchingPhotos = normalizeReportPhotos(photos)
+    .filter(isIncludedReportPhoto)
+    .filter((photo) => roomMatches(photo, rooms))
+    .sort((a, b) => {
+      if (a.isBestRoomPhoto !== b.isBestRoomPhoto) return a.isBestRoomPhoto ? -1 : 1;
+      return (b.confidence ?? 0) - (a.confidence ?? 0);
+    });
+
+  return matchingPhotos[0];
+}
+
+export function groupRoomPhotos(photos: UploadedPhoto[]): RoomPhotoGroup[] {
+  const grouped = new Map<string, UploadedPhoto[]>();
+
+  normalizeReportPhotos(photos)
+    .filter(isIncludedReportPhoto)
+    .forEach((photo) => {
+      const room = photoReportRoom(photo);
+      grouped.set(room, [...(grouped.get(room) ?? []), photo]);
+    });
+
+  return Array.from(grouped.entries()).map(([room, groupedPhotos]) => ({
+    bestPhoto:
+      groupedPhotos.find((photo) => photo.isBestRoomPhoto) ??
+      groupedPhotos
+        .slice()
+        .sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0))[0],
+    photos: groupedPhotos,
+    room,
+  }));
+}
+
+function numberFromProperty(value: string) {
+  const parsed = Number.parseInt(value.replace(/[^0-9]/g, ""), 10);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function yesNo(value: string) {
+  return value.trim().toLowerCase().startsWith("y");
+}
+
+function coverageItem(label: string, actual: number, expected: number): CoverageItem {
+  if (expected <= 0) {
+    return {
+      actual,
+      expected,
+      label,
+      missingCount: 0,
+      status: "Not Applicable",
+    };
+  }
+
+  const missingCount = Math.max(0, expected - actual);
+  return {
+    actual,
+    expected,
+    label,
+    missingCount,
+    status: actual >= expected ? "Complete" : actual > 0 ? "Partial" : "Missing",
+  };
+}
+
+export function calculatePhotoCoverage(
+  property: PropertyDetails,
+  photos: UploadedPhoto[],
+): CoverageItem[] {
+  const includedPhotos = normalizeReportPhotos(photos).filter(isIncludedReportPhoto);
+  const roomCount = (rooms: RoomLabel[]) =>
+    includedPhotos.filter((photo) => roomMatches(photo, rooms)).length;
+
+  return [
+    coverageItem(
+      "Bedrooms detected",
+      roomCount(["Primary Bedroom", "Bedroom"]),
+      numberFromProperty(property.beds),
+    ),
+    coverageItem(
+      "Bathrooms detected",
+      roomCount(["Primary Bathroom", "Bathroom"]),
+      numberFromProperty(property.baths),
+    ),
+    coverageItem("Exterior", roomCount(["Front Exterior", "Rear Exterior", "Side Exterior", "Exterior"]), 1),
+    coverageItem("Kitchen", roomCount(["Kitchen"]), 1),
+    coverageItem("Living Room", roomCount(["Living Room"]), 1),
+    coverageItem("Garage", roomCount(["Garage"]), Math.max(0, numberFromProperty(property.garageCount))),
+    coverageItem("Pool", roomCount(["Pool"]), yesNo(property.pool) ? 1 : 0),
+    coverageItem("Basement", roomCount(["Basement"]), yesNo(property.basement) ? 1 : 0),
+  ];
 }
 
 export function chooseSecondaryDetailRoom(roomOverviews: RoomOverview[]) {
@@ -593,16 +865,16 @@ export function buildRoomOverviews(
   photos: UploadedPhoto[],
   selectedRecommendations: Improvement[],
 ): RoomOverview[] {
+  const normalizedPhotos = normalizeReportPhotos(photos);
   const requiredRooms: RoomLabel[] = [
     "Kitchen",
     "Living Room",
     "Primary Bedroom",
-    "Primary Bathroom",
     "Bathroom",
-    "Exterior",
+    "Front Exterior",
   ];
-  const detectedRooms = photos
-    .map((photo) => photo.roomLabel)
+  const detectedRooms = normalizedPhotos
+    .map((photo) => photoReportRoom(photo) as RoomLabel)
     .filter((room) => room !== "Cover");
   const rooms = Array.from(new Set([...requiredRooms, ...detectedRooms]));
 
@@ -616,7 +888,9 @@ export function buildRoomOverviews(
 
     return {
       room,
-      photo: validUploadedPhotos(photos).find((photo) => photo.roomLabel === room),
+      photo: normalizedPhotos
+        .filter(isIncludedReportPhoto)
+        .find((photo) => photoReportRoom(photo) === room),
       current,
       potential,
       recommendations,
@@ -631,17 +905,24 @@ export function buildRoomOverviews(
 export function buildReadinessSummary(
   selectedIds: number[],
   photos: UploadedPhoto[],
+  property: PropertyDetails = defaultProperty,
   options: { addressHeroPhotoLookup?: AddressHeroPhotoLookupResult } = {},
 ): ReadinessSummary {
+  const normalizedPhotos = normalizeReportPhotos(photos);
   const readiness = calculateReadiness(selectedIds);
   const propertyHeroPhoto = resolvePropertyHeroPhoto(
-    photos,
+    normalizedPhotos,
     options.addressHeroPhotoLookup,
   );
   const roomOverviews = buildRoomOverviews(
-    photos,
+    normalizedPhotos,
     readiness.selectedRecommendations,
   );
+  const coverageSummary = calculatePhotoCoverage(property, normalizedPhotos);
+  const groupedRoomPhotos = groupRoomPhotos(normalizedPhotos);
+  const missingRooms = coverageSummary
+    .filter((item) => item.status === "Missing" || item.status === "Partial")
+    .map((item) => item.label);
   const categoryScores = baseCategories.map((category) => {
     const selectedCategoryPoints = readiness.selectedRecommendations
       .filter((item) => item.category === category.name)
@@ -658,12 +939,20 @@ export function buildReadinessSummary(
     ...readiness,
     categoryScores,
     roomOverviews,
-    photos,
+    photos: normalizedPhotos,
     coverPhoto: propertyHeroPhoto.photo,
-    executivePhoto: chooseInteriorPhoto(photos),
-    strongestPhoto: chooseStrongestPhoto(photos),
-    kitchenPhoto: validUploadedPhotos(photos).find((photo) => photo.roomLabel === "Kitchen"),
-    marketingPhoto: chooseMarketingPhoto(photos),
+    bestBathroomPhoto: chooseBestRoomPhoto(normalizedPhotos, ["Bathroom", "Primary Bathroom"]),
+    bestExteriorPhoto: chooseBestRoomPhoto(normalizedPhotos, ["Front Exterior", "Exterior", "Rear Exterior", "Side Exterior"]),
+    bestKitchenPhoto: chooseBestRoomPhoto(normalizedPhotos, ["Kitchen"]),
+    bestLivingRoomPhoto: chooseBestRoomPhoto(normalizedPhotos, ["Living Room"]),
+    bestPrimaryBedroomPhoto: chooseBestRoomPhoto(normalizedPhotos, ["Primary Bedroom", "Bedroom"]),
+    coverageSummary,
+    executivePhoto: chooseInteriorPhoto(normalizedPhotos),
+    groupedRoomPhotos,
+    missingRooms,
+    strongestPhoto: chooseStrongestPhoto(normalizedPhotos),
+    kitchenPhoto: chooseBestRoomPhoto(normalizedPhotos, ["Kitchen"]),
+    marketingPhoto: chooseMarketingPhoto(normalizedPhotos),
     propertyHeroPhoto,
     secondaryDetailRoom: chooseSecondaryDetailRoom(roomOverviews),
   };

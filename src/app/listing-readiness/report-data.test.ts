@@ -1,13 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
   buildReadinessSummary,
+  calculatePhotoCoverage,
   calculateReadiness,
   chooseCoverPhoto,
+  chooseBestRoomPhoto,
   chooseInteriorPhoto,
+  groupRoomPhotos,
   resolvePropertyHeroPhoto,
   isUsableImageDataUrl,
   inferRoomFromFilename,
   improvements,
+  defaultProperty,
   type UploadedPhoto,
 } from "./report-data";
 
@@ -170,10 +174,10 @@ describe("listing readiness report data", () => {
   });
 
   it("infers room labels from filenames", () => {
-    expect(inferRoomFromFilename("front-exterior-01.jpg")).toBe("Exterior");
+    expect(inferRoomFromFilename("front-exterior-01.jpg")).toBe("Front Exterior");
     expect(inferRoomFromFilename("bright-kitchen-island.jpg")).toBe("Kitchen");
-    expect(inferRoomFromFilename("primary-bath-vanity.jpg")).toBe("Primary Bathroom");
-    expect(inferRoomFromFilename("unknown-angle.jpg")).toBe("Other");
+    expect(inferRoomFromFilename("primary-bath-vanity.jpg")).toBe("Bathroom");
+    expect(inferRoomFromFilename("unknown-angle.jpg")).toBe("Unknown");
   });
 
   it("builds PDF-ready room overviews with missing-photo placeholders", () => {
@@ -204,5 +208,74 @@ describe("listing readiness report data", () => {
     expect(summary.selectedRecommendations).toHaveLength(1);
     expect(summary.selectedRecommendations[0]?.room).toBe("Kitchen");
     expect(summary.selectedPoints).toBe(kitchen?.points);
+  });
+
+  it("stores fallback classification results and groups photos by room", () => {
+    const photos = [
+      { ...photo("bright-kitchen-island", "Unknown"), name: "bright-kitchen-island.jpg" },
+      { ...photo("living-room", "Unknown"), name: "living-room.jpg" },
+    ];
+    const groups = groupRoomPhotos(photos);
+
+    expect(groups.map((group) => group.room)).toEqual(["Kitchen", "Living Room"]);
+    expect(groups[0]?.photos[0]?.classificationMode).toBe("manual_fallback");
+  });
+
+  it("lets an agent correction override fallback classification", () => {
+    const corrected = {
+      ...photo("filename-says-kitchen", "Office"),
+      agentCorrectedClassification: true,
+      classificationMode: "agent" as const,
+      detectedRoomLabel: "Office" as const,
+      name: "filename-says-kitchen.jpg",
+    };
+
+    expect(groupRoomPhotos([corrected])[0]?.room).toBe("Office");
+  });
+
+  it("selects the preferred best room photo and keeps only included photos", () => {
+    const includedBest = { ...photo("kitchen-best", "Kitchen"), isBestRoomPhoto: true };
+    const excluded = { ...photo("kitchen-excluded", "Kitchen"), includedInReport: false };
+
+    expect(chooseBestRoomPhoto([excluded, includedBest], ["Kitchen"])?.id).toBe("kitchen-best");
+    expect(groupRoomPhotos([excluded, includedBest])[0]?.photos).toHaveLength(1);
+  });
+
+  it("calculates coverage from bedroom and bathroom counts without blocking report generation", () => {
+    const coverage = calculatePhotoCoverage(
+      { ...defaultProperty, beds: "4", baths: "3", garageCount: "1", pool: "Yes", basement: "No" },
+      [
+        photo("primary", "Primary Bedroom"),
+        photo("bedroom", "Bedroom"),
+        photo("bath", "Bathroom"),
+        photo("front", "Front Exterior"),
+        photo("kitchen", "Kitchen"),
+      ],
+    );
+
+    expect(coverage.find((item) => item.label === "Bedrooms detected")?.status).toBe("Partial");
+    expect(coverage.find((item) => item.label === "Bathrooms detected")?.missingCount).toBe(2);
+    expect(coverage.find((item) => item.label === "Pool")?.status).toBe("Missing");
+    expect(coverage.find((item) => item.label === "Basement")?.status).toBe("Not Applicable");
+  });
+
+  it("passes resolved photos and coverage data to the PDF summary layer", () => {
+    const mainExterior = {
+      ...landscapePhoto("main-front", "Cover"),
+      isCoverPreferred: true,
+    };
+    const kitchen = { ...photo("kitchen", "Kitchen"), isBestRoomPhoto: true };
+    const living = photo("living", "Living Room");
+    const summary = buildReadinessSummary(
+      improvements.map((item) => item.id),
+      [mainExterior, kitchen, living],
+      { ...defaultProperty, beds: "2", baths: "1" },
+    );
+
+    expect(summary.propertyHeroPhoto.photo?.id).toBe("main-front");
+    expect(summary.bestKitchenPhoto?.id).toBe("kitchen");
+    expect(summary.bestLivingRoomPhoto?.id).toBe("living");
+    expect(summary.groupedRoomPhotos.length).toBeGreaterThan(0);
+    expect(summary.missingRooms).toContain("Bathrooms detected");
   });
 });

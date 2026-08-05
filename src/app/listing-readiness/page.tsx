@@ -3,13 +3,19 @@
 import Image from "next/image";
 import { ChangeEvent, useMemo, useState } from "react";
 import {
+  LuxuryCard,
+  ProgressBar,
+  ReportBadge,
+  SectionHeader,
+} from "@/components/realty-edge-design-system";
+import {
   buildReadinessSummary,
   defaultProperty,
   formatFieldLabel,
   improvements,
   marketingHighlights,
   type PropertyDetails,
-  roomLabels,
+  reviewRoomLabels,
   type RoomLabel,
   type UploadedPhoto,
 } from "./report-data";
@@ -63,6 +69,21 @@ function CheckIcon() {
   return <span aria-hidden="true">✓</span>;
 }
 
+const workflowSteps = [
+  "Property Details",
+  "Main Exterior Photo",
+  "Upload Property Photos",
+  "AI Organizes Photos",
+  "Review & Correct",
+  "Generate Report",
+] as const;
+
+type WorkflowStep = (typeof workflowSteps)[number];
+
+function formatRoomLabel(room: string) {
+  return room.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
 export default function ListingReadinessPage() {
   const [selected, setSelected] = useState<number[]>(
     improvements.map((item) => item.id),
@@ -71,12 +92,18 @@ export default function ListingReadinessPage() {
   const [showSetup, setShowSetup] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [isPreparingPhotos, setIsPreparingPhotos] = useState(false);
+  const [activeStep, setActiveStep] = useState<WorkflowStep>("Property Details");
+  const [mainExteriorPhoto, setMainExteriorPhoto] = useState<UploadedPhoto | null>(null);
   const [photos, setPhotos] = useState<UploadedPhoto[]>([]);
   const [property, setProperty] = useState<PropertyDetails>(defaultProperty);
 
+  const reportPhotos = useMemo(
+    () => (mainExteriorPhoto ? [mainExteriorPhoto, ...photos] : photos),
+    [mainExteriorPhoto, photos],
+  );
   const summary = useMemo(
-    () => buildReadinessSummary(selected, photos),
-    [photos, selected],
+    () => buildReadinessSummary(selected, reportPhotos, property),
+    [property, reportPhotos, selected],
   );
 
   function showMessage(message: string) {
@@ -93,30 +120,72 @@ export default function ListingReadinessPage() {
   }
 
   function updatePropertyField(key: keyof PropertyDetails, value: string) {
-    setProperty((currentProperty) => ({
-      ...currentProperty,
-      [key]: value,
-    }));
+    setProperty((currentProperty) => {
+      const nextProperty = {
+        ...currentProperty,
+        [key]: value,
+      };
+      return {
+        ...nextProperty,
+        cityStateZip: `${nextProperty.city}, ${nextProperty.state} ${nextProperty.zip}`.trim(),
+      };
+    });
   }
 
   function updatePhotoRoom(photoId: string, roomLabel: RoomLabel) {
     setPhotos((currentPhotos) =>
       currentPhotos.map((photo) => {
-        if (roomLabel === "Cover") {
-          return photo.id === photoId
-            ? { ...photo, isCoverPreferred: true, roomLabel: "Cover" }
-            : {
-                ...photo,
-                isCoverPreferred: false,
-                roomLabel: photo.roomLabel === "Cover" ? "Other" : photo.roomLabel,
-              };
-        }
-
         return photo.id === photoId
-          ? { ...photo, isCoverPreferred: false, roomLabel }
+          ? {
+              ...photo,
+              agentCorrectedClassification: true,
+              classificationMode: "agent",
+              confidence: 1,
+              detectedRoomLabel: roomLabel,
+              roomLabel,
+            }
           : photo;
       }),
     );
+  }
+
+  async function prepareUploadedPhoto(file: File, overrides: Partial<UploadedPhoto> = {}) {
+    const preparedPhoto = await readFileAsPdfImage(file);
+    return {
+      id: `${file.name}-${file.size}-${file.lastModified}-${crypto.randomUUID()}`,
+      includedInReport: true,
+      isCoverPreferred: false,
+      name: file.name,
+      ...preparedPhoto,
+      classificationMode: "manual_fallback",
+      confidence: 0.35,
+      detectedRoomLabel: "Unknown",
+      roomLabel: "Unknown",
+      ...overrides,
+    } satisfies UploadedPhoto;
+  }
+
+  async function handleMainExteriorUpload(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setIsPreparingPhotos(true);
+    try {
+      const uploadedPhoto = await prepareUploadedPhoto(file, {
+        agentCorrectedClassification: true,
+        classificationMode: "agent",
+        confidence: 1,
+        detectedRoomLabel: "Front Exterior",
+        isCoverPreferred: true,
+        roomLabel: "Cover",
+      });
+      setMainExteriorPhoto(uploadedPhoto);
+    } catch {
+      showMessage("The main exterior photo could not be prepared.");
+    } finally {
+      setIsPreparingPhotos(false);
+      event.target.value = "";
+    }
   }
 
   async function handlePhotoUpload(event: ChangeEvent<HTMLInputElement>) {
@@ -130,16 +199,7 @@ export default function ListingReadinessPage() {
 
     try {
       const uploadedPhotos: UploadedPhoto[] = await Promise.all(
-        files.map(async (file) => {
-          const preparedPhoto = await readFileAsPdfImage(file);
-          return {
-            id: `${file.name}-${file.size}-${file.lastModified}-${crypto.randomUUID()}`,
-            isCoverPreferred: false,
-            name: file.name,
-            ...preparedPhoto,
-            roomLabel: "Other",
-          };
-        }),
+        files.map((file) => prepareUploadedPhoto(file)),
       );
 
       setPhotos((currentPhotos) => [...currentPhotos, ...uploadedPhotos]);
@@ -159,21 +219,51 @@ export default function ListingReadinessPage() {
   }
 
   function markCoverPhoto(photoId: string) {
+    const targetPhoto = reportPhotos.find((photo) => photo.id === photoId);
+    if (!targetPhoto) return;
+    const coverPhoto = {
+      ...targetPhoto,
+      agentCorrectedClassification: true,
+      classificationMode: "agent" as const,
+      confidence: 1,
+      detectedRoomLabel: "Front Exterior" as const,
+      isCoverPreferred: true,
+      roomLabel: "Cover" as const,
+    };
+    setMainExteriorPhoto(coverPhoto);
     setPhotos((currentPhotos) =>
-      currentPhotos.map((photo) =>
-        photo.id === photoId
-          ? { ...photo, isCoverPreferred: true, roomLabel: "Cover" }
-          : {
-              ...photo,
-              isCoverPreferred: false,
-              roomLabel: photo.roomLabel === "Cover" ? "Other" : photo.roomLabel,
-            },
-      ),
+      currentPhotos.filter((photo) => photo.id !== photoId),
     );
   }
 
   function removePhoto(photoId: string) {
     setPhotos((currentPhotos) => currentPhotos.filter((photo) => photo.id !== photoId));
+    setMainExteriorPhoto((currentPhoto) => (currentPhoto?.id === photoId ? null : currentPhoto));
+  }
+
+  function setPhotoIncluded(photoId: string, includedInReport: boolean) {
+    setPhotos((currentPhotos) =>
+      currentPhotos.map((photo) =>
+        photo.id === photoId ? { ...photo, includedInReport } : photo,
+      ),
+    );
+    setMainExteriorPhoto((currentPhoto) =>
+      currentPhoto?.id === photoId ? { ...currentPhoto, includedInReport } : currentPhoto,
+    );
+  }
+
+  function markBestRoomPhoto(photoId: string) {
+    const targetPhoto = reportPhotos.find((photo) => photo.id === photoId);
+    if (!targetPhoto) return;
+    const targetRoom = targetPhoto.roomLabel === "Cover" ? "Front Exterior" : targetPhoto.roomLabel;
+    const updateBest = (photo: UploadedPhoto) => ({
+      ...photo,
+      isBestRoomPhoto:
+        photo.id === photoId ||
+        (photo.roomLabel !== targetRoom && photo.isBestRoomPhoto),
+    });
+    setPhotos((currentPhotos) => currentPhotos.map(updateBest));
+    setMainExteriorPhoto((currentPhoto) => (currentPhoto ? updateBest(currentPhoto) : currentPhoto));
   }
 
   function downloadReport() {
@@ -214,233 +304,365 @@ export default function ListingReadinessPage() {
               </button>
             </div>
 
-            <div className="mt-6 grid gap-4 md:grid-cols-2">
-              {(Object.keys(property) as Array<keyof PropertyDetails>)
-                .filter((key) => key !== "agentHeadshotDataUrl")
-                .map((key) => (
-                  <label
-                    className={
-                      key === "address" || key === "cityStateZip"
-                        ? "md:col-span-2"
-                        : ""
-                    }
-                    key={key}
+            <div className="mt-6">
+              <ProgressBar
+                label={activeStep}
+                max={workflowSteps.length}
+                value={workflowSteps.indexOf(activeStep) + 1}
+              />
+              <div className="mt-4 grid gap-2 md:grid-cols-6">
+                {workflowSteps.map((step) => (
+                  <button
+                    className={`rounded-lg border px-3 py-2 text-xs font-black ${
+                      activeStep === step
+                        ? "border-[#d4a017] bg-[#fffaf0] text-[#9a7100]"
+                        : "border-slate-200 bg-white text-slate-500"
+                    }`}
+                    key={step}
+                    onClick={() => setActiveStep(step)}
+                    type="button"
                   >
-                    <span className="mb-1 block text-xs font-bold uppercase text-slate-500">
-                      {formatFieldLabel(key)}
-                    </span>
-                    <input
-                      className="w-full rounded-lg border border-slate-300 px-3 py-3 outline-none focus:border-[#d4a017]"
-                      onChange={(event) => updatePropertyField(key, event.target.value)}
-                      value={property[key]}
-                    />
-                  </label>
+                    {step}
+                  </button>
                 ))}
+              </div>
             </div>
 
-            <label className="mt-5 block rounded-xl border border-slate-200 bg-slate-50 p-5">
-              <span className="font-bold">Optional agent headshot</span>
-              <span className="mt-1 block text-sm text-slate-500">
-                Used on the PDF cover. If skipped, the cover uses an initials
-                avatar.
-              </span>
-              <input
-                accept="image/*"
-                className="mt-3 block w-full text-sm"
-                onChange={handleAgentHeadshotUpload}
-                type="file"
-              />
-              {property.agentHeadshotDataUrl && (
-                <span className="mt-2 block text-sm font-bold text-emerald-700">
-                  Headshot selected
-                </span>
-              )}
-            </label>
-
-            <section className="mt-5 rounded-2xl border border-[#d4a017]/40 bg-[#fffaf0] p-5 shadow-sm">
-              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                <div>
-                  <p className="text-xs font-black uppercase tracking-[0.22em] text-[#9a7100]">
-                    Property Photos
-                  </p>
-                  <h3 className="mt-1 text-xl font-black text-[#082442]">
-                    Upload property photos
-                  </h3>
-                  <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
-                    Add JPG, JPEG, PNG, or WEBP images, assign each room
-                    manually, and select one preferred cover for the dashboard
-                    and future homeowner report.
-                  </p>
+            {activeStep === "Property Details" && (
+              <LuxuryCard className="mt-6">
+                <SectionHeader
+                  eyebrow="Step 1"
+                  title="Property Details"
+                  subtitle="Enter the facts used for the report, coverage checks, and homeowner-facing PDF."
+                />
+                <div className="mt-6 grid gap-4 md:grid-cols-3">
+                  {([
+                    "address",
+                    "city",
+                    "state",
+                    "zip",
+                    "beds",
+                    "baths",
+                    "sqft",
+                    "propertyType",
+                    "garageCount",
+                    "pool",
+                    "basement",
+                    "homeownerName",
+                    "agentName",
+                    "brokerage",
+                    "agentPhone",
+                    "agentEmail",
+                    "agentWebsite",
+                  ] as Array<keyof PropertyDetails>).map((key) => (
+                    <label
+                      className={key === "address" ? "md:col-span-3" : ""}
+                      key={key}
+                    >
+                      <span className="mb-1 block text-xs font-bold uppercase text-slate-500">
+                        {formatFieldLabel(key)}
+                      </span>
+                      <input
+                        className="w-full rounded-lg border border-slate-300 px-3 py-3 outline-none focus:border-[#d4a017]"
+                        onChange={(event) => updatePropertyField(key, event.target.value)}
+                        value={property[key]}
+                      />
+                    </label>
+                  ))}
                 </div>
-                <label className="cursor-pointer rounded-xl bg-[#082442] px-5 py-3 text-center text-sm font-black text-white shadow-lg shadow-slate-900/10">
-                  Upload Property Photos
+                <label className="mt-5 block rounded-xl border border-slate-200 bg-slate-50 p-5">
+                  <span className="font-bold">Optional agent headshot</span>
+                  <span className="mt-1 block text-sm text-slate-500">
+                    Used on the PDF cover. If skipped, the cover uses an initials avatar.
+                  </span>
+                  <input
+                    accept="image/*"
+                    className="mt-3 block w-full text-sm"
+                    onChange={handleAgentHeadshotUpload}
+                    type="file"
+                  />
+                  {property.agentHeadshotDataUrl && (
+                    <span className="mt-2 block text-sm font-bold text-emerald-700">
+                      Headshot selected
+                    </span>
+                  )}
+                </label>
+              </LuxuryCard>
+            )}
+
+            {activeStep === "Main Exterior Photo" && (
+              <LuxuryCard className="mt-6" tone="gold">
+                <SectionHeader
+                  eyebrow="Main Exterior Photo"
+                  title="Upload the cover hero image"
+                  subtitle="Upload the clearest front exterior photo of the home. This image will be used on the cover of the homeowner report."
+                />
+                <div className="mt-6 grid gap-5 md:grid-cols-[1fr_280px]">
+                  <label className="block rounded-xl border-2 border-dashed border-[#d4a017]/50 bg-white p-6">
+                    <span className="font-black text-[#082442]">Upload one main exterior photo</span>
+                    <span className="mt-2 block text-sm text-slate-600">
+                      Full front elevation, landscape orientation, minimal obstruction, and good lighting are preferred.
+                    </span>
+                    <input
+                      accept="image/jpeg,image/jpg,image/png,image/webp"
+                      className="mt-4 block w-full text-sm"
+                      disabled={isPreparingPhotos}
+                      onChange={handleMainExteriorUpload}
+                      type="file"
+                    />
+                  </label>
+                  <div className="rounded-xl bg-[#082442] p-5 text-white">
+                    <p className="text-xs font-black uppercase tracking-[0.2em] text-[#d4a017]">
+                      Example target
+                    </p>
+                    <ul className="mt-4 space-y-2 text-sm">
+                      <li>Full front elevation</li>
+                      <li>Landscape orientation preferred</li>
+                      <li>Driveway or front yard acceptable</li>
+                      <li>Minimal obstruction</li>
+                    </ul>
+                  </div>
+                </div>
+                {mainExteriorPhoto && (
+                  <div className="mt-5 flex flex-col gap-4 sm:flex-row">
+                    <div
+                      aria-label={mainExteriorPhoto.name}
+                      className="h-40 rounded-xl bg-cover bg-center sm:w-64"
+                      role="img"
+                      style={{ backgroundImage: `url(${mainExteriorPhoto.dataUrl})` }}
+                    />
+                    <div className="self-center">
+                      <ReportBadge tone="positive">Agent-selected cover</ReportBadge>
+                      <p className="mt-3 font-black text-[#082442]">{mainExteriorPhoto.name}</p>
+                      <div className="mt-3 flex gap-2">
+                        <button
+                          className="rounded-lg border border-red-200 bg-white px-4 py-2 text-sm font-black text-red-700"
+                          onClick={() => setMainExteriorPhoto(null)}
+                          type="button"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </LuxuryCard>
+            )}
+
+            {activeStep === "Upload Property Photos" && (
+              <LuxuryCard className="mt-6">
+                <SectionHeader
+                  eyebrow="Property Photos"
+                  title="Bulk upload remaining photos"
+                  subtitle="Upload the remaining property photos in any order. Listing AI will organize them by room."
+                />
+                <label className="mt-6 block rounded-xl border-2 border-dashed border-slate-300 p-6 text-center">
+                  <span className="font-black text-[#082442]">Upload Property Photos</span>
                   <input
                     accept="image/jpeg,image/jpg,image/png,image/webp"
-                    className="sr-only"
+                    className="mt-4 block w-full rounded-lg border border-slate-200 bg-white px-3 py-3 text-sm"
                     disabled={isPreparingPhotos}
                     multiple
                     onChange={handlePhotoUpload}
                     type="file"
                   />
+                  {isPreparingPhotos && (
+                    <span className="mt-2 block text-sm font-bold text-[#9a7100]">
+                      Processing uploaded photos...
+                    </span>
+                  )}
                 </label>
-              </div>
-              <input
-                accept="image/jpeg,image/jpg,image/png,image/webp"
-                aria-label="Upload property photos"
-                className="mt-4 block w-full rounded-lg border border-slate-200 bg-white px-3 py-3 text-sm"
-                disabled={isPreparingPhotos}
-                multiple
-                onChange={handlePhotoUpload}
-                type="file"
-              />
-              {isPreparingPhotos && (
-                <span className="mt-2 block text-sm font-bold text-[#9a7100]">
-                  Preparing photos for the PDF...
-                </span>
-              )}
-              {photos.length > 0 && (
                 <p className="mt-3 text-sm font-semibold text-slate-600">
-                  {photos.length} uploaded photo{photos.length === 1 ? "" : "s"} ready
-                  for this test property.
+                  {photos.length} bulk photo{photos.length === 1 ? "" : "s"} uploaded.
                 </p>
-              )}
-            </section>
+              </LuxuryCard>
+            )}
 
-            <section className="mt-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <p className="text-xs font-black uppercase tracking-[0.22em] text-[#9a7100]">
-                Cover Photo
-              </p>
-              {summary.propertyHeroPhoto.photo ? (
-                <div className="mt-4 flex flex-col gap-4 sm:flex-row">
-                  <div
-                    aria-label={`Selected cover photo: ${summary.propertyHeroPhoto.photo.name}`}
-                    className="h-32 rounded-xl bg-cover bg-center sm:w-48"
-                    role="img"
-                    style={{
-                      backgroundImage: `url(${summary.propertyHeroPhoto.photo.dataUrl})`,
-                    }}
-                  />
-                  <div className="self-center">
-                    <p className="text-sm font-bold text-slate-500">
-                      {summary.propertyHeroPhoto.agentOverrode
-                        ? "Agent Selected:"
-                        : "AI Selected:"}
-                    </p>
-                    <h4 className="mt-1 text-lg font-black text-[#082442]">
-                      {summary.propertyHeroPhoto.roomClassification
-                        .replace(/_/g, " ")
-                        .replace(/\b\w/g, (letter) => letter.toUpperCase())}
-                    </h4>
-                    <p className="mt-1 text-sm text-slate-600">
-                      Confidence:{" "}
-                      {Math.round(summary.propertyHeroPhoto.aiConfidence * 100)}%
-                    </p>
-                    <p className="mt-2 max-w-lg text-sm text-slate-500">
-                      {summary.propertyHeroPhoto.reason}
-                    </p>
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      <button
-                        className="rounded-lg bg-[#082442] px-4 py-2 text-sm font-black text-white disabled:opacity-50"
-                        disabled={summary.propertyHeroPhoto.agentOverrode}
-                        onClick={() =>
-                          summary.propertyHeroPhoto.photo &&
-                          markCoverPhoto(summary.propertyHeroPhoto.photo.id)
-                        }
-                        type="button"
-                      >
-                        Use This Photo
-                      </button>
-                      <button
-                        className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-black text-slate-600"
-                        onClick={() =>
-                          showMessage("Choose another uploaded thumbnail as the cover photo.")
-                        }
-                        type="button"
-                      >
-                        Choose Another
-                      </button>
-                    </div>
-                  </div>
+            {activeStep === "AI Organizes Photos" && (
+              <LuxuryCard className="mt-6" tone="navy">
+                <SectionHeader
+                  eyebrow="AI Organizes Photos"
+                  title="Classification is ready for review"
+                  subtitle="Live Listing AI analysis is not active in this test route yet. These local classifications are a clearly labeled manual fallback based on filenames and later agent corrections."
+                />
+                <div className="mt-6 grid gap-3 md:grid-cols-3">
+                  <ReportBadge tone="gold">Fallback/manual mode</ReportBadge>
+                  <ReportBadge tone="positive">{summary.groupedRoomPhotos.length} room groups</ReportBadge>
+                  <ReportBadge>{reportPhotos.length} total photos</ReportBadge>
                 </div>
-              ) : (
-                <div className="mt-4 rounded-xl bg-slate-50 p-4 text-sm text-slate-600">
-                  <p className="font-bold text-[#082442]">
-                    Searching for property exterior...
+              </LuxuryCard>
+            )}
+
+            {activeStep === "Review & Correct" && (
+              <LuxuryCard className="mt-6">
+                <SectionHeader
+                  action={
+                    <button
+                      className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-black text-slate-600"
+                      onClick={() => showMessage("Custom rooms can be created by correcting a photo to Other for this test build.")}
+                      type="button"
+                    >
+                      Add Room
+                    </button>
+                  }
+                  eyebrow="Photo Review"
+                  title="Review and correct photo organization"
+                  subtitle="Groups are generated by the current fallback classifier. Correct any room labels, choose preferred report photos, and exclude anything that should not appear in the report."
+                />
+                <div className="mt-5 grid gap-3 md:grid-cols-4">
+                  {summary.coverageSummary.map((item) => (
+                    <div className="rounded-xl border bg-slate-50 p-3" key={item.label}>
+                      <p className="text-xs font-black uppercase text-slate-500">{item.label}</p>
+                      <p className="mt-2 text-xl font-black text-[#082442]">
+                        {item.status === "Not Applicable"
+                          ? "N/A"
+                          : `${item.actual} of ${item.expected}`}
+                      </p>
+                      <ReportBadge
+                        tone={
+                          item.status === "Complete"
+                            ? "positive"
+                            : item.status === "Missing"
+                              ? "muted"
+                              : "gold"
+                        }
+                      >
+                        {item.status}
+                      </ReportBadge>
+                    </div>
+                  ))}
+                </div>
+                {summary.missingRooms.length > 0 && (
+                  <p className="mt-4 rounded-xl bg-[#fffaf0] p-4 text-sm font-semibold text-[#9a7100]">
+                    Some rooms may be missing. You can add photos or continue with limited coverage.
                   </p>
-                  <p className="mt-1">{summary.propertyHeroPhoto.reason}</p>
-                </div>
-              )}
-              <p className="mt-3 text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                Use This Photo or Choose Another with the cover button on any
-                uploaded thumbnail.
-              </p>
-            </section>
-
-            {photos.length > 0 && (
-              <div className="mt-4 grid grid-cols-2 gap-4 md:grid-cols-3">
-                {photos.map((photo) => (
-                  <div className="rounded-xl border bg-slate-50 p-3" key={photo.id}>
-                    <div className="relative">
-                      <div
-                        aria-label={photo.name}
-                        className="aspect-[4/3] rounded-lg bg-cover bg-center"
-                        role="img"
-                        style={{ backgroundImage: `url(${photo.dataUrl})` }}
-                      />
-                      {photo.isCoverPreferred && (
-                        <span className="absolute left-2 top-2 rounded-full bg-[#d4a017] px-3 py-1 text-xs font-black uppercase text-[#082442] shadow">
-                          Cover
-                        </span>
-                      )}
-                    </div>
-                    <p className="mt-3 truncate text-sm font-black text-[#082442]">
-                      {photo.name}
-                    </p>
-                    <p className="mt-1 text-xs font-bold uppercase text-slate-500">
-                      Assigned: {photo.roomLabel}
-                    </p>
-                    <label className="mt-3 block">
-                      <span className="mb-1 block text-xs font-bold uppercase text-slate-500">
-                        Room / Category
-                      </span>
-                      <select
-                        className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
-                        onChange={(event) =>
-                          updatePhotoRoom(photo.id, event.target.value as RoomLabel)
-                        }
-                        value={photo.roomLabel}
-                      >
-                        {roomLabels.map((room) => (
-                          <option key={room} value={room}>
-                            {room}
-                          </option>
+                )}
+                <div className="mt-6 space-y-6">
+                  {summary.groupedRoomPhotos.map((group) => (
+                    <div key={group.room}>
+                      <div className="mb-3 flex items-center justify-between">
+                        <h3 className="text-lg font-black text-[#082442]">
+                          {formatRoomLabel(String(group.room))}
+                        </h3>
+                        <ReportBadge>{group.photos.length} photo{group.photos.length === 1 ? "" : "s"}</ReportBadge>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
+                        {group.photos.map((photo) => (
+                          <div className="rounded-xl border bg-slate-50 p-3" key={photo.id}>
+                            <div
+                              aria-label={photo.name}
+                              className="aspect-[4/3] rounded-lg bg-cover bg-center"
+                              role="img"
+                              style={{ backgroundImage: `url(${photo.dataUrl})` }}
+                            />
+                            <p className="mt-3 truncate text-sm font-black text-[#082442]">
+                              {photo.name}
+                            </p>
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              <ReportBadge tone={photo.classificationMode === "manual_fallback" ? "gold" : "positive"}>
+                                {photo.classificationMode === "manual_fallback" ? "Fallback classification" : "Agent corrected"}
+                              </ReportBadge>
+                              <ReportBadge>{Math.round((photo.confidence ?? 0) * 100)}%</ReportBadge>
+                            </div>
+                            <label className="mt-3 block">
+                              <span className="mb-1 block text-xs font-bold uppercase text-slate-500">
+                                Room / Category
+                              </span>
+                              <select
+                                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                                onChange={(event) =>
+                                  updatePhotoRoom(photo.id, event.target.value as RoomLabel)
+                                }
+                                value={photo.roomLabel}
+                              >
+                                {reviewRoomLabels.map((room) => (
+                                  <option key={room} value={room}>
+                                    {room}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            <div className="mt-3 grid gap-2">
+                              <button
+                                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-black text-slate-600"
+                                onClick={() => markBestRoomPhoto(photo.id)}
+                                type="button"
+                              >
+                                {photo.isBestRoomPhoto ? "Best room photo" : "Mark best for room"}
+                              </button>
+                              <button
+                                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-black text-slate-600"
+                                onClick={() => setPhotoIncluded(photo.id, photo.includedInReport === false)}
+                                type="button"
+                              >
+                                {photo.includedInReport === false ? "Include in report" : "Exclude from report"}
+                              </button>
+                              <button
+                                className="rounded-lg border border-[#d4a017] bg-white px-3 py-2 text-sm font-black text-[#9a7100]"
+                                onClick={() => markCoverPhoto(photo.id)}
+                                type="button"
+                              >
+                                Use as main exterior
+                              </button>
+                              <button
+                                className="rounded-lg border border-red-200 bg-white px-3 py-2 text-sm font-black text-red-700"
+                                onClick={() => removePhoto(photo.id)}
+                                type="button"
+                              >
+                                Remove photo
+                              </button>
+                            </div>
+                          </div>
                         ))}
-                      </select>
-                    </label>
-                    <button
-                      className={`mt-3 w-full rounded-lg border px-3 py-2 text-sm font-black ${
-                        photo.isCoverPreferred
-                          ? "border-[#D4A017] bg-[#f7edd1] text-[#9a7100]"
-                          : "border-slate-300 bg-white text-slate-600"
-                      }`}
-                      onClick={() => markCoverPhoto(photo.id)}
-                      type="button"
-                    >
-                      {photo.isCoverPreferred ? "Cover photo selected" : "Use as cover photo"}
-                    </button>
-                    <button
-                      className="mt-2 w-full rounded-lg border border-red-200 bg-white px-3 py-2 text-sm font-black text-red-700"
-                      onClick={() => removePhoto(photo.id)}
-                      type="button"
-                    >
-                      Remove photo
-                    </button>
-                  </div>
-                ))}
-              </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </LuxuryCard>
+            )}
+
+            {activeStep === "Generate Report" && (
+              <LuxuryCard className="mt-6" tone="gold">
+                <SectionHeader
+                  eyebrow="Generate Report"
+                  title="Structured report data is ready"
+                  subtitle="The PDF receives resolved photos, room groups, coverage, corrections, and confidence values. Missing photos do not block report generation."
+                />
+                <div className="mt-5 grid gap-3 md:grid-cols-3">
+                  <ReportBadge tone={summary.propertyHeroPhoto.photo ? "positive" : "muted"}>
+                    {summary.propertyHeroPhoto.photo ? "Hero photo ready" : "Hero unavailable"}
+                  </ReportBadge>
+                  <ReportBadge>{summary.groupedRoomPhotos.length} grouped rooms</ReportBadge>
+                  <ReportBadge>{summary.missingRooms.length} coverage notes</ReportBadge>
+                </div>
+              </LuxuryCard>
             )}
 
             <div className="mt-6 flex flex-wrap justify-end gap-3">
+              <button
+                className="rounded-lg border border-slate-300 px-5 py-3 font-bold"
+                disabled={workflowSteps.indexOf(activeStep) === 0}
+                onClick={() =>
+                  setActiveStep(workflowSteps[Math.max(0, workflowSteps.indexOf(activeStep) - 1)])
+                }
+                type="button"
+              >
+                Back
+              </button>
+              <button
+                className="rounded-lg border border-[#d4a017] bg-white px-5 py-3 font-bold text-[#9a7100]"
+                disabled={workflowSteps.indexOf(activeStep) === workflowSteps.length - 1}
+                onClick={() =>
+                  setActiveStep(
+                    workflowSteps[
+                      Math.min(workflowSteps.length - 1, workflowSteps.indexOf(activeStep) + 1)
+                    ],
+                  )
+                }
+                type="button"
+              >
+                Continue
+              </button>
               <button
                 className="rounded-lg border border-slate-300 px-5 py-3 font-bold"
                 onClick={() => setShowSetup(false)}
@@ -702,7 +924,7 @@ export default function ListingReadinessPage() {
                   provided.
                 </p>
                 <div className="mt-4 text-sm font-bold text-[#9a7100]">
-                  {photos.length} uploaded photo{photos.length === 1 ? "" : "s"}
+                  {reportPhotos.length} report photo{reportPhotos.length === 1 ? "" : "s"}
                 </div>
               </div>
               <div className="rounded-2xl border bg-white p-5 shadow-sm">
