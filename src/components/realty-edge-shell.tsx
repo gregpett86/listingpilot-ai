@@ -113,7 +113,7 @@ const navItems: NavItem[] = [
     label: "Listing Evaluation",
     icon: <IconSpark />,
   },
-  { href: "#", label: "My Reports", icon: <IconDoc /> },
+  { href: "/listing-reports", label: "Listing Reports", icon: <IconDoc /> },
   { href: "#", label: "Leads", icon: <IconLeads /> },
   { href: "#", label: "Profile", icon: <IconSettings /> },
 ];

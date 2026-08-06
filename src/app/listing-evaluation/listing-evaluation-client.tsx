@@ -516,8 +516,8 @@ function ReportToolbar({
           Listing Evaluation Report
         </p>
         <div className="flex flex-wrap gap-2">
-          <Link className="rounded-lg border border-white/20 px-3 py-2 text-sm font-bold" href="/listing-evaluation/new">
-            Back to Listing Evaluations
+          <Link className="rounded-lg border border-white/20 px-3 py-2 text-sm font-bold" href="/listing-reports">
+            Back to Listing Reports
           </Link>
           <button className="rounded-lg border border-white/20 px-3 py-2 text-sm font-bold" onClick={onEdit} type="button">
             Edit Property
@@ -640,16 +640,16 @@ export function ListingEvaluationReportPage({ id }: { id: string }) {
 
   if (!reportData) {
     return (
-      <RealtyEdgeShell>
+      <RealtyEdgeShell activeLabel="Listing Reports">
         <div className="p-8">
           <LuxuryCard>
             <SectionHeader
               eyebrow="Listing Evaluation"
-              title="No report found"
-              subtitle="Create a new Listing Evaluation to generate an online report."
+              title="Listing Evaluation Report Not Found"
+              subtitle="This saved report is no longer available in this browser."
             />
-            <Link className="mt-6 inline-block rounded-lg bg-[#D4A017] px-5 py-3 font-black text-[#111827]" href="/listing-evaluation/new">
-              New Listing Evaluation
+            <Link className="mt-6 inline-block rounded-lg bg-[#D4A017] px-5 py-3 font-black text-[#111827]" href="/listing-reports">
+              Back to Listing Reports
             </Link>
           </LuxuryCard>
         </div>
@@ -693,6 +693,7 @@ export function ListingEvaluationReportPage({ id }: { id: string }) {
         photos,
         property: reportData.property,
         recommendations,
+        selectedRecommendationIds: reportData.selectedRecommendationIds,
       }),
     );
   }
@@ -719,7 +720,7 @@ export function ListingEvaluationReportPage({ id }: { id: string }) {
   }
 
   return (
-    <RealtyEdgeShell>
+    <RealtyEdgeShell activeLabel="Listing Reports">
       <div className="h-full overflow-auto bg-[#E9EEF5]">
         <ReportToolbar
           onDownload={() => downloadListingReadinessPdf(reportData.property, reportData.summary)}
