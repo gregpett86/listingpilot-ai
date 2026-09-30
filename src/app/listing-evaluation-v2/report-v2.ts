@@ -47,13 +47,51 @@ function photoForSpace(evaluation: ListingEvaluationV2, spaceId: string) {
 }
 
 function coverPhoto(evaluation: ListingEvaluationV2) {
-  const preferred = ["exterior", "landscaping", "pool"];
-  for (const category of preferred) {
-    const space = evaluation.spaces.find((item) => item.category === category);
-    const photo = space ? photoForSpace(evaluation, space.id) : undefined;
-    if (photo?.dataUrl) return photo;
+  // A dedicated front-of-home photo always wins. No bedroom should appear on the cover
+  // while a properly identified exterior photograph is available.
+  if (evaluation.coverFrontPhoto) return evaluation.coverFrontPhoto;
+
+  const frontExterior = evaluation.spaces.find(
+    (space) =>
+      space.category === "exterior" &&
+      /front|street|curb/i.test(space.customLabel || space.defaultLabel),
+  );
+  const frontPhoto = frontExterior
+    ? photoForSpace(evaluation, frontExterior.id)?.dataUrl
+    : undefined;
+  if (frontPhoto) return frontPhoto;
+
+  for (const category of ["exterior", "landscaping", "pool"] as const) {
+    for (const space of evaluation.spaces.filter((item) => item.category === category)) {
+      const photo = photoForSpace(evaluation, space.id);
+      if (photo?.dataUrl) return photo.dataUrl;
+    }
   }
-  return evaluation.photos.find((photo) => photo.dataUrl);
+  return evaluation.photos.find((photo) => photo.dataUrl)?.dataUrl;
+}
+
+/** Fit an image within a square frame without stretching or bleeding into page margins. */
+function addSquareCoverImage(doc: jsPDF, dataUrl: string, x: number, y: number, size: number) {
+  doc.setFillColor(232, 221, 212);
+  doc.rect(x, y, size, size, "F");
+  try {
+    const props = doc.getImageProperties(dataUrl);
+    const ratio = props.width / props.height;
+    const width = ratio >= 1 ? size : size * ratio;
+    const height = ratio >= 1 ? size / ratio : size;
+    doc.addImage(
+      dataUrl,
+      props.fileType || "JPEG",
+      x + (size - width) / 2,
+      y + (size - height) / 2,
+      width,
+      height,
+      undefined,
+      "FAST",
+    );
+  } catch {
+    // Keep the neutral frame rather than distort or substitute an unrelated image.
+  }
 }
 
 function addImageCover(
@@ -141,25 +179,26 @@ function drawCover(doc: jsPDF, input: ReportInput) {
   const hero = coverPhoto(evaluation);
   const property = evaluation.property;
 
-  // Match the CMA family: cream page, full-width property image,
-  // bordered title card overlapping the image, and agent strip at bottom.
+  // Same CMA-family typography and agent strip, with a centered square photo
+  // and generous cream margins instead of the previous edge-to-edge image.
   doc.setFillColor(245, 243, 239);
   doc.rect(0, 0, PAGE_W, PAGE_H, "F");
 
   const titleBoxX = 31.8;
-  const titleBoxY = 14;
+  const titleBoxY = 10;
   const titleBoxW = PAGE_W - titleBoxX * 2;
   const titleBoxH = 85;
-  const imageY = 42;
   const agentBarH = 42;
   const agentBarY = PAGE_H - agentBarH;
-  const imageH = agentBarY - imageY;
+  const imageSize = 156;
+  const imageX = (PAGE_W - imageSize) / 2;
+  const imageY = 70;
 
-  if (hero?.dataUrl) {
-    addImageCover(doc, hero.dataUrl, 0, imageY, PAGE_W, imageH);
+  if (hero) {
+    addSquareCoverImage(doc, hero, imageX, imageY, imageSize);
   } else {
     doc.setFillColor(232, 221, 212);
-    doc.rect(0, imageY, PAGE_W, imageH, "F");
+    doc.rect(imageX, imageY, imageSize, imageSize, "F");
   }
 
   // Title card overlays the hero image, like the CMA cover.
