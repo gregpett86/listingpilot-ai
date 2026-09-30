@@ -196,6 +196,17 @@ function drawCover(doc: jsPDF, input: ReportInput) {
   drawFooter(doc, 1);
 }
 
+function sortedAnalysesByImpact(evaluation: ListingEvaluationV2) {
+  return [...evaluation.analyses].sort((a, b) => {
+    const aImpact = a.potentialScore - a.currentScore;
+    const bImpact = b.potentialScore - b.currentScore;
+
+    if (bImpact !== aImpact) return bImpact - aImpact;
+    if (a.currentScore !== b.currentScore) return a.currentScore - b.currentScore;
+    return b.potentialScore - a.potentialScore;
+  });
+}
+
 function drawOverview(doc: jsPDF, input: ReportInput, page: number) {
   const { evaluation } = input;
   heading(doc, "Property Score Overview", 22);
@@ -211,7 +222,7 @@ function drawOverview(doc: jsPDF, input: ReportInput, page: number) {
   scoreCard(doc, M + 60, 42, 54, "Overall potential", evaluation.potentialScore ?? "—");
   scoreCard(doc, M + 120, 42, 54, "Confidence", evaluation.confidence ?? "—");
 
-  const analyses = evaluation.analyses
+  const analyses = sortedAnalysesByImpact(evaluation)
     .map((analysis) => ({
       analysis,
       space: evaluation.spaces.find((space) => space.id === analysis.spaceId),
@@ -533,7 +544,7 @@ export function createListingEvaluationV2Pdf(input: ReportInput) {
     page += 1;
     let roomState: RoomFlowState = { page, y: 22 };
 
-    for (const analysis of input.evaluation.analyses) {
+    for (const analysis of sortedAnalysesByImpact(input.evaluation)) {
       roomState = drawRoomFlow(doc, input, analysis, roomState);
     }
 
