@@ -231,7 +231,7 @@ function drawCover(doc: jsPDF, input: ReportInput) {
   doc.setFont("helvetica", "bold");
   doc.setFontSize(6.8);
   doc.setTextColor(26, 26, 26);
-  doc.text("YOUR LISTING AI EVALUATION", PAGE_W / 2, dividerY + 7, {
+  doc.text("YOUR LISTING READINESS EVALUATION", PAGE_W / 2, dividerY + 7, {
     align: "center",
     charSpace: 1.5,
   });
