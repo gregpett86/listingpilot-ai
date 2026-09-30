@@ -109,8 +109,8 @@ const navItems: NavItem[] = [
   { href: "#", label: "Dashboard", icon: <IconHome /> },
   { href: "#", label: "New CMA / Property", icon: <IconDoc /> },
   {
-    href: "/listing-evaluation/new",
-    label: "Listing Evaluation",
+    href: "/listing-ai",
+    label: "Listing AI",
     icon: <IconSpark />,
   },
   { href: "/listing-reports", label: "Listing Reports", icon: <IconDoc /> },
@@ -119,7 +119,7 @@ const navItems: NavItem[] = [
 ];
 
 function Sidebar({
-  activeLabel = "Listing Evaluation",
+  activeLabel = "Listing AI",
   onClose,
   showClose,
 }: {
