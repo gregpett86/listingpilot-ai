@@ -107,6 +107,9 @@ export type ListingEvaluationV2 = {
   property: PropertySnapshot;
   spaces: PropertySpace[];
   photos: EvaluationPhoto[];
+  /** Separate property-level front/street-view cover photograph (not analyzed as a room). */
+  coverFrontPhoto?: string;
+  coverFrontPhotoName?: string;
   analyses: SpaceAnalysis[];
   recommendations: ImprovementRecommendation[];
   currentScore?: number;
