@@ -273,22 +273,48 @@ function drawOverview(doc: jsPDF, input: ReportInput, page: number) {
   return page;
 }
 
+function estimatedCardHeight(text: string, base = 20) {
+  const roughLines = Math.max(1, Math.ceil(text.length / 95));
+  return base + Math.max(0, roughLines - 1) * 3.5;
+}
+
 function roomContentSelection(
   evaluation: ListingEvaluationV2,
   analysis: SpaceAnalysis,
 ) {
-  const fixes = evaluation.recommendations
+  const allFixes = evaluation.recommendations
     .filter(
       (recommendation) =>
         recommendation.spaceId === analysis.spaceId && recommendation.selected,
     )
-    .sort((a, b) => b.scoreImpact - a.scoreImpact)
-    .slice(0, 3);
+    .sort((a, b) => b.scoreImpact - a.scoreImpact);
 
-  const positiveSlots = Math.max(0, 5 - fixes.length);
-  const positives = analysis.visibleFindings
-    .filter((finding) => finding.kind === "positive")
-    .slice(0, positiveSlots);
+  const allPositives = analysis.visibleFindings.filter(
+    (finding) => finding.kind === "positive",
+  );
+
+  const fixes = allFixes.slice(0, 3);
+  const positives = [];
+
+  // Space available after the photo/score header and section headings.
+  // This keeps every room on one page while allowing six items when copy is short enough.
+  const maxContentHeight = 136;
+  let usedHeight = 0;
+
+  for (const fix of fixes) {
+    usedHeight += estimatedCardHeight(fix.reason, 22) + 3;
+  }
+
+  const maxTotalItems = 6;
+  const remainingSlots = Math.max(0, maxTotalItems - fixes.length);
+
+  for (const positive of allPositives) {
+    if (positives.length >= remainingSlots) break;
+    const nextHeight = estimatedCardHeight(positive.evidence, 20) + 3;
+    if (usedHeight + nextHeight > maxContentHeight) break;
+    positives.push(positive);
+    usedHeight += nextHeight;
+  }
 
   return { fixes, positives };
 }
