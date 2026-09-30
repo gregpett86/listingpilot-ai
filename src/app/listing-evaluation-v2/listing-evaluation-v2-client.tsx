@@ -564,11 +564,11 @@ export default function ListingEvaluationV2Client() {
                     {activeAnalysis ? (
                       <div className="mt-6 space-y-6">
                         <section>
-                          <h3 className="text-lg font-semibold">Visible findings</h3>
+                          <h3 className="text-lg font-semibold">What Presents Well</h3>
                           <div className="mt-3 grid gap-3 md:grid-cols-2">
-                            {activeAnalysis.visibleFindings.map((finding) => (
+                            {activeAnalysis.visibleFindings.filter((finding) => finding.kind === "positive").map((finding) => (
                               <div key={finding.id} className="rounded-xl border p-4">
-                                <p className="text-xs font-bold uppercase text-slate-500">{finding.kind === "positive" ? "Positive" : "Opportunity"}</p>
+                                <p className="text-xs font-bold uppercase text-amber-700">Positive</p>
                                 <p className="mt-1 font-semibold">{finding.label}</p>
                                 <p className="mt-2 text-sm text-slate-600">{finding.evidence}</p>
                               </div>
@@ -577,7 +577,7 @@ export default function ListingEvaluationV2Client() {
                         </section>
 
                         <section>
-                          <h3 className="text-lg font-semibold">What can raise this score</h3>
+                          <h3 className="text-lg font-semibold">Opportunities to Raise This Score</h3>
                           <div className="mt-3 space-y-3">
                             {activeRecommendations.length ? activeRecommendations.map((recommendation) => (
                               <label key={recommendation.id} className="flex cursor-pointer gap-3 rounded-xl border p-4">
