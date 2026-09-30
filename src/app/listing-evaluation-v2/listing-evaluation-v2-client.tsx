@@ -785,21 +785,11 @@ export default function ListingEvaluationV2Client() {
             ) : null}
 
             <section className="rounded-2xl border bg-white p-6 shadow-sm">
-              <h2 className="text-xl font-semibold">Final property review</h2>
+              <h2 className="text-xl font-semibold">Generate seller report</h2>
               <p className="mt-1 text-sm text-slate-600">
-                Property and agent details remain editable here before the seller report is generated.
+                Property details above will be used in the report. Agent name, headshot, brokerage and logo will auto-populate from the Realty Edge Pro profile when Listing AI is connected to the main dashboard.
               </p>
               {draftMessage ? <p className="mt-2 text-xs font-medium text-emerald-700">{draftMessage}</p> : null}
-              <div className="mt-5 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-                <input className="rounded-xl border px-4 py-3" placeholder="Property address" value={property.address} onChange={(event) => setProperty((current) => ({ ...current, address: event.target.value }))} />
-                <input className="rounded-xl border px-4 py-3" placeholder="City, State ZIP" value={property.cityStateZip} onChange={(event) => setProperty((current) => ({ ...current, cityStateZip: event.target.value }))} />
-                <input className="rounded-xl border px-4 py-3" type="number" placeholder="Beds" value={property.beds || ""} onChange={(event) => setProperty((current) => ({ ...current, beds: numberValue(event.target.value) }))} />
-                <input className="rounded-xl border px-4 py-3" type="number" step="0.5" placeholder="Baths" value={property.baths || ""} onChange={(event) => setProperty((current) => ({ ...current, baths: Number(event.target.value) || 0 }))} />
-                <input className="rounded-xl border px-4 py-3" placeholder="Agent name" value={agent.name} onChange={(event) => setAgent((current) => ({ ...current, name: event.target.value }))} />
-                <input className="rounded-xl border px-4 py-3" placeholder="Brokerage" value={agent.brokerage} onChange={(event) => setAgent((current) => ({ ...current, brokerage: event.target.value }))} />
-                <input className="rounded-xl border px-4 py-3" placeholder="Agent phone" value={agent.phone} onChange={(event) => setAgent((current) => ({ ...current, phone: event.target.value }))} />
-                <input className="rounded-xl border px-4 py-3" placeholder="Agent email" value={agent.email} onChange={(event) => setAgent((current) => ({ ...current, email: event.target.value }))} />
-              </div>
               <button
                 className="mt-6 rounded-xl bg-slate-900 px-5 py-3 font-semibold text-white disabled:opacity-40"
                 disabled={!dynamicAnalyses.length}
