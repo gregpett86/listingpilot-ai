@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, useMemo, useState } from "react";
+import { ChangeEvent, useEffect, useMemo, useState } from "react";
 import {
   addPropertySpace,
   buildPropertySpaces,
@@ -11,6 +11,7 @@ import {
   calculateSpacePotentialScore,
 } from "@/lib/listing-evaluation-v2/scoring";
 import { buildRecommendationsFromAgentCandidates } from "@/lib/listing-evaluation-v2/recommendation-impact";
+import { loadListingAiDraft, saveListingAiDraft } from "@/lib/listing-evaluation-v2/draft-storage";
 import {
   displaySpaceName,
   type EvaluationPhoto,
@@ -137,12 +138,77 @@ export default function ListingEvaluationV2Client() {
   const [activeSpaceId, setActiveSpaceId] = useState<string>();
   const [analyzingSpaceId, setAnalyzingSpaceId] = useState<string>();
   const [analysisError, setAnalysisError] = useState("");
+  const [draftHydrated, setDraftHydrated] = useState(false);
+  const [draftMessage, setDraftMessage] = useState("");
   const [agent, setAgent] = useState({
     name: "",
     brokerage: "",
     phone: "",
     email: "",
   });
+
+  useEffect(() => {
+    let cancelled = false;
+
+    loadListingAiDraft()
+      .then((draft) => {
+        if (cancelled || !draft) return;
+        setProperty(draft.property);
+        setCounts(draft.counts);
+        setSpaces(draft.spaces);
+        setPhotos(draft.photos);
+        setAnalyses(draft.analyses);
+        setRecommendations(draft.recommendations);
+        setActiveSpaceId(draft.activeSpaceId);
+        setCoverFrontPhoto(draft.coverFrontPhoto);
+        setAgent(draft.agent);
+        setDraftMessage("Restored your saved Listing AI draft.");
+      })
+      .catch(() => {
+        setDraftMessage("Draft restore was unavailable. Your current work will still save during this session.");
+      })
+      .finally(() => {
+        if (!cancelled) setDraftHydrated(true);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!draftHydrated) return;
+
+    const timeout = window.setTimeout(() => {
+      saveListingAiDraft({
+        property,
+        counts,
+        spaces,
+        photos,
+        analyses,
+        recommendations,
+        activeSpaceId,
+        coverFrontPhoto,
+        agent,
+        savedAt: new Date().toISOString(),
+      })
+        .then(() => setDraftMessage("Draft saved"))
+        .catch(() => setDraftMessage("Draft could not be saved in this browser."));
+    }, 350);
+
+    return () => window.clearTimeout(timeout);
+  }, [
+    draftHydrated,
+    property,
+    counts,
+    spaces,
+    photos,
+    analyses,
+    recommendations,
+    activeSpaceId,
+    coverFrontPhoto,
+    agent,
+  ]);
 
   const dynamicAnalyses = useMemo(
     () =>
@@ -723,6 +789,7 @@ export default function ListingEvaluationV2Client() {
               <p className="mt-1 text-sm text-slate-600">
                 Property and agent details remain editable here before the seller report is generated.
               </p>
+              {draftMessage ? <p className="mt-2 text-xs font-medium text-emerald-700">{draftMessage}</p> : null}
               <div className="mt-5 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
                 <input className="rounded-xl border px-4 py-3" placeholder="Property address" value={property.address} onChange={(event) => setProperty((current) => ({ ...current, address: event.target.value }))} />
                 <input className="rounded-xl border px-4 py-3" placeholder="City, State ZIP" value={property.cityStateZip} onChange={(event) => setProperty((current) => ({ ...current, cityStateZip: event.target.value }))} />
@@ -755,6 +822,11 @@ export default function ListingEvaluationV2Client() {
               >
                 Generate seller report
               </button>
+              {!dynamicAnalyses.length ? (
+                <p className="mt-2 text-sm font-medium text-amber-700">
+                  Analyze at least one room or property area before generating the seller report.
+                </p>
+              ) : null}
             </section>
           </>
         )}
