@@ -125,75 +125,161 @@ function drawFooter(doc: jsPDF, page: number) {
   doc.text(String(page), PAGE_W - M, PAGE_H - 8, { align: "right" });
 }
 
+function agentInitials(name: string) {
+  const initials = name
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("");
+  return initials || "AI";
+}
+
 function drawCover(doc: jsPDF, input: ReportInput) {
   const { evaluation, agent } = input;
   const hero = coverPhoto(evaluation);
+  const property = evaluation.property;
 
-  doc.setFillColor(250, 249, 246);
+  // Match the CMA family: cream page, full-width property image,
+  // bordered title card overlapping the image, and agent strip at bottom.
+  doc.setFillColor(245, 243, 239);
   doc.rect(0, 0, PAGE_W, PAGE_H, "F");
 
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(8);
-  doc.setTextColor(...GOLD);
-  doc.text("REALTY EDGE PRO", M, 16);
-
-  doc.setFontSize(26);
-  doc.setTextColor(...NAVY);
-  doc.text("Listing Readiness Evaluation", M, 30);
+  const titleBoxX = 31.8;
+  const titleBoxY = 14;
+  const titleBoxW = PAGE_W - titleBoxX * 2;
+  const titleBoxH = 85;
+  const imageY = 42;
+  const agentBarH = 42;
+  const agentBarY = PAGE_H - agentBarH;
+  const imageH = agentBarY - imageY;
 
   if (hero?.dataUrl) {
-    addImageCover(doc, hero.dataUrl, M, 39, PAGE_W - M * 2, 91);
+    addImageCover(doc, hero.dataUrl, 0, imageY, PAGE_W, imageH);
   } else {
-    doc.setFillColor(...LIGHT);
-    doc.roundedRect(M, 39, PAGE_W - M * 2, 91, 3, 3, "F");
+    doc.setFillColor(232, 221, 212);
+    doc.rect(0, imageY, PAGE_W, imageH, "F");
   }
 
-  const property = evaluation.property;
+  // Title card overlays the hero image, like the CMA cover.
+  doc.setFillColor(255, 255, 255);
+  doc.rect(titleBoxX, titleBoxY, titleBoxW, titleBoxH, "F");
+  doc.setDrawColor(26, 26, 26);
+  doc.setLineWidth(0.7);
+  doc.rect(titleBoxX, titleBoxY, titleBoxW, titleBoxH, "S");
+
+  doc.setFont("times", "italic");
+  doc.setFontSize(24);
+  doc.setTextColor(26, 26, 26);
+
+  const titleLines = [
+    "Understanding",
+    "Your Home's",
+    "Listing Readiness",
+  ];
+  let titleY = titleBoxY + 19;
+  for (const line of titleLines) {
+    doc.text(line, PAGE_W / 2, titleY, { align: "center" });
+    titleY += 12;
+  }
+
+  const dividerY = titleY + 1;
+  doc.setDrawColor(26, 26, 26);
+  doc.setLineWidth(0.35);
+  doc.line(PAGE_W / 2 - 31, dividerY, PAGE_W / 2 + 31, dividerY);
+
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(19);
-  doc.setTextColor(...NAVY);
-  doc.text(property.address || "Property Address", M, 146);
+  doc.setFontSize(6.8);
+  doc.setTextColor(26, 26, 26);
+  doc.text("YOUR LISTING AI EVALUATION", PAGE_W / 2, dividerY + 7, {
+    align: "center",
+    charSpace: 1.5,
+  });
 
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(10);
-  doc.setTextColor(...MUTED);
-  doc.text(property.cityStateZip || "", M, 154);
+  const address = property.address || "Property Address";
+  const location = property.cityStateZip || "";
+  doc.setFontSize(8.2);
+  doc.text(address.toUpperCase(), PAGE_W / 2, dividerY + 14, {
+    align: "center",
+    maxWidth: titleBoxW - 14,
+  });
+  if (location) {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(6.7);
+    doc.text(location.toUpperCase(), PAGE_W / 2, dividerY + 20, {
+      align: "center",
+      maxWidth: titleBoxW - 14,
+    });
+  }
 
-  const facts = [
-    property.beds ? `${property.beds} Beds` : "",
-    property.baths ? `${property.baths} Baths` : "",
-    property.sqft ? `${property.sqft.toLocaleString()} Sq Ft` : "",
-    property.yearBuilt ? `Built ${property.yearBuilt}` : "",
-  ].filter(Boolean);
-  doc.text(facts.join("  •  "), M, 163);
+  // Agent strip.
+  doc.setFillColor(245, 243, 239);
+  doc.rect(0, agentBarY, PAGE_W, agentBarH, "F");
+  doc.setFillColor(212, 165, 116);
+  doc.rect(0, agentBarY, PAGE_W, 0.8, "F");
 
-  scoreCard(doc, M, 177, 52, "Current readiness", evaluation.currentScore ?? "—");
-  scoreCard(doc, M + 58, 177, 52, "Potential", evaluation.potentialScore ?? "—");
-  scoreCard(doc, M + 116, 177, 52, "Confidence", evaluation.confidence ?? "—");
+  const avatarR = 14;
+  const avatarCX = 23;
+  const avatarCY = agentBarY + agentBarH / 2;
 
-  doc.setDrawColor(...BORDER);
-  doc.line(M, 215, PAGE_W - M, 215);
-
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(10);
-  doc.setTextColor(...NAVY);
-  doc.text("Prepared by", M, 228);
+  doc.setFillColor(212, 165, 116);
+  doc.circle(avatarCX, avatarCY, avatarR + 1.2, "F");
+  doc.setFillColor(245, 243, 239);
+  doc.circle(avatarCX, avatarCY, avatarR + 0.5, "F");
 
   if (agent.headshotDataUrl) {
-    addImageCover(doc, agent.headshotDataUrl, M, 234, 24, 24);
+    addImageCover(
+      doc,
+      agent.headshotDataUrl,
+      avatarCX - avatarR,
+      avatarCY - avatarR,
+      avatarR * 2,
+      avatarR * 2,
+    );
+  } else {
+    doc.setFillColor(27, 34, 56);
+    doc.circle(avatarCX, avatarCY, avatarR, "F");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.setTextColor(255, 255, 255);
+    doc.text(agentInitials(agent.name), avatarCX, avatarCY + 3.5, {
+      align: "center",
+    });
   }
 
-  const agentX = agent.headshotDataUrl ? M + 31 : M;
-  doc.setFontSize(13);
-  doc.text(agent.name || "Real Estate Professional", agentX, 239);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(9);
-  doc.setTextColor(...MUTED);
-  doc.text(agent.brokerage || "Realty Edge Pro", agentX, 246);
-  if (agent.phone) doc.text(agent.phone, agentX, 252);
-  if (agent.email) doc.text(agent.email, agentX, 258);
+  const nameX = 42;
+  doc.setFont("times", "bold");
+  doc.setFontSize(11.5);
+  doc.setTextColor(26, 26, 26);
+  doc.text(agent.name || "Your Real Estate Professional", nameX, avatarCY - 2);
 
-  drawFooter(doc, 1);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(6.5);
+  doc.setTextColor(102, 102, 102);
+  doc.text(
+    agent.brokerage ? agent.brokerage.toUpperCase() : "REALTOR®",
+    nameX,
+    avatarCY + 5,
+  );
+
+  // REP brand mark on the right. This mirrors the CMA logo position and
+  // can later be replaced by the agent/brokerage logo when REP profile data is connected.
+  const brandX = PAGE_W - 47;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(6.2);
+  doc.setTextColor(27, 34, 56);
+  doc.text("REALTY", brandX, avatarCY - 5, { align: "center" });
+  doc.setFontSize(10);
+  doc.text("EDGE", brandX, avatarCY + 1, { align: "center" });
+  doc.setTextColor(212, 165, 116);
+  doc.text("PRO", brandX + 12, avatarCY + 1, { align: "center" });
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(4.8);
+  doc.setTextColor(102, 102, 102);
+  doc.text("PREDICT • PREPARE • LIST", brandX, avatarCY + 7, {
+    align: "center",
+  });
 }
 
 function sortedAnalysesByImpact(evaluation: ListingEvaluationV2) {
