@@ -21,6 +21,7 @@ import {
   type SpaceCategory,
 } from "@/lib/listing-evaluation-v2/types";
 import type { SpaceAgentOutput } from "@/lib/listing-evaluation-v2/agent-contracts";
+import { downloadListingEvaluationV2Pdf } from "./report-v2";
 
 const baseSections: Array<{ category: SpaceCategory; label: string }> = [
   { category: "bedroom", label: "Bedrooms" },
@@ -107,6 +108,12 @@ export default function ListingEvaluationV2Client() {
   const [activeSpaceId, setActiveSpaceId] = useState<string>();
   const [analyzingSpaceId, setAnalyzingSpaceId] = useState<string>();
   const [analysisError, setAnalysisError] = useState("");
+  const [agent, setAgent] = useState({
+    name: "",
+    brokerage: "",
+    phone: "",
+    email: "",
+  });
 
   const dynamicAnalyses = useMemo(
     () =>
@@ -634,16 +641,39 @@ export default function ListingEvaluationV2Client() {
             <section className="rounded-2xl border bg-white p-6 shadow-sm">
               <h2 className="text-xl font-semibold">Final property review</h2>
               <p className="mt-1 text-sm text-slate-600">
-                Property facts remain editable here before the seller report is generated.
+                Property and agent details remain editable here before the seller report is generated.
               </p>
               <div className="mt-5 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
                 <input className="rounded-xl border px-4 py-3" placeholder="Property address" value={property.address} onChange={(event) => setProperty((current) => ({ ...current, address: event.target.value }))} />
                 <input className="rounded-xl border px-4 py-3" placeholder="City, State ZIP" value={property.cityStateZip} onChange={(event) => setProperty((current) => ({ ...current, cityStateZip: event.target.value }))} />
                 <input className="rounded-xl border px-4 py-3" type="number" placeholder="Beds" value={property.beds || ""} onChange={(event) => setProperty((current) => ({ ...current, beds: numberValue(event.target.value) }))} />
                 <input className="rounded-xl border px-4 py-3" type="number" step="0.5" placeholder="Baths" value={property.baths || ""} onChange={(event) => setProperty((current) => ({ ...current, baths: Number(event.target.value) || 0 }))} />
+                <input className="rounded-xl border px-4 py-3" placeholder="Agent name" value={agent.name} onChange={(event) => setAgent((current) => ({ ...current, name: event.target.value }))} />
+                <input className="rounded-xl border px-4 py-3" placeholder="Brokerage" value={agent.brokerage} onChange={(event) => setAgent((current) => ({ ...current, brokerage: event.target.value }))} />
+                <input className="rounded-xl border px-4 py-3" placeholder="Agent phone" value={agent.phone} onChange={(event) => setAgent((current) => ({ ...current, phone: event.target.value }))} />
+                <input className="rounded-xl border px-4 py-3" placeholder="Agent email" value={agent.email} onChange={(event) => setAgent((current) => ({ ...current, email: event.target.value }))} />
               </div>
-              <button className="mt-6 rounded-xl bg-slate-300 px-5 py-3 font-semibold text-slate-600" disabled>
-                Generate seller report (next integration step)
+              <button
+                className="mt-6 rounded-xl bg-slate-900 px-5 py-3 font-semibold text-white disabled:opacity-40"
+                disabled={!dynamicAnalyses.length}
+                onClick={() =>
+                  downloadListingEvaluationV2Pdf({
+                    evaluation: {
+                      ...evaluation,
+                      currentScore: propertyScores.currentScore,
+                      potentialScore: propertyScores.potentialScore,
+                      confidence: propertyScores.confidence,
+                    },
+                    agent: {
+                      name: agent.name || "Your Real Estate Professional",
+                      brokerage: agent.brokerage || "Realty Edge Pro",
+                      phone: agent.phone,
+                      email: agent.email,
+                    },
+                  })
+                }
+              >
+                Generate seller report
               </button>
             </section>
           </>
