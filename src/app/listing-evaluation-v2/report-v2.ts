@@ -23,11 +23,13 @@ type ReportInput = {
 const PAGE_W = 215.9;
 const PAGE_H = 279.4;
 const M = 16;
-const NAVY = [8, 23, 54] as const;
-const GOLD = [230, 145, 0] as const;
-const MUTED = [83, 103, 134] as const;
-const LIGHT = [247, 249, 252] as const;
-const BORDER = [205, 214, 226] as const;
+type PdfColor = [number, number, number];
+
+const NAVY: PdfColor = [8, 23, 54];
+const GOLD: PdfColor = [230, 145, 0];
+const MUTED: PdfColor = [83, 103, 134];
+const LIGHT: PdfColor = [247, 249, 252];
+const BORDER: PdfColor = [205, 214, 226];
 
 function safeFilename(value: string) {
   return (value || "property")
@@ -301,7 +303,8 @@ function drawRoomPage(
     doc.roundedRect(M, y, PAGE_W - M * 2, 23, 3, 3, "S");
     doc.setFont("helvetica", "bold");
     doc.setFontSize(7);
-    doc.setTextColor(...(finding.kind === "positive" ? GOLD : MUTED));
+    const findingColor = finding.kind === "positive" ? GOLD : MUTED;
+    doc.setTextColor(findingColor[0], findingColor[1], findingColor[2]);
     doc.text(finding.kind === "positive" ? "POSITIVE" : "OPPORTUNITY", M + 4, y + 6);
     doc.setFontSize(9);
     doc.setTextColor(...NAVY);
