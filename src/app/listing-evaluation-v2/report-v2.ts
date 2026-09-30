@@ -273,53 +273,40 @@ function drawOverview(doc: jsPDF, input: ReportInput, page: number) {
   return page;
 }
 
-function estimatedCardHeight(text: string, base = 20) {
-  const roughLines = Math.max(1, Math.ceil(text.length / 95));
-  return base + Math.max(0, roughLines - 1) * 3.5;
+function startFreshRoomPage(doc: jsPDF, page: number) {
+  doc.addPage();
+  return { page: page + 1, y: 22 };
 }
 
-function roomContentSelection(
-  evaluation: ListingEvaluationV2,
-  analysis: SpaceAnalysis,
+function ensureRoomContinuation(
+  doc: jsPDF,
+  page: number,
+  y: number,
+  requiredHeight: number,
+  roomName: string,
 ) {
-  const allFixes = evaluation.recommendations
-    .filter(
-      (recommendation) =>
-        recommendation.spaceId === analysis.spaceId && recommendation.selected,
-    )
-    .sort((a, b) => b.scoreImpact - a.scoreImpact);
-
-  const allPositives = analysis.visibleFindings.filter(
-    (finding) => finding.kind === "positive",
-  );
-
-  const fixes = allFixes.slice(0, 3);
-  const positives = [];
-
-  // Space available after the photo/score header and section headings.
-  // This keeps every room on one page while allowing six items when copy is short enough.
-  const maxContentHeight = 136;
-  let usedHeight = 0;
-
-  for (const fix of fixes) {
-    usedHeight += estimatedCardHeight(fix.reason, 22) + 3;
+  if (y + requiredHeight <= PAGE_H - 20) {
+    return { page, y };
   }
 
-  const maxTotalItems = 6;
-  const remainingSlots = Math.max(0, maxTotalItems - fixes.length);
+  drawFooter(doc, page);
+  doc.addPage();
+  const nextPage = page + 1;
 
-  for (const positive of allPositives) {
-    if (positives.length >= remainingSlots) break;
-    const nextHeight = estimatedCardHeight(positive.evidence, 20) + 3;
-    if (usedHeight + nextHeight > maxContentHeight) break;
-    positives.push(positive);
-    usedHeight += nextHeight;
-  }
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(16);
+  doc.setTextColor(...NAVY);
+  doc.text(`${roomName} • Continued`, M, 22);
 
-  return { fixes, positives };
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7);
+  doc.setTextColor(...MUTED);
+  doc.text("INDIVIDUAL SPACE EVALUATION", M, 30);
+
+  return { page: nextPage, y: 40 };
 }
 
-function drawRoomPage(
+function drawRoomSection(
   doc: jsPDF,
   input: ReportInput,
   analysis: SpaceAnalysis,
@@ -327,41 +314,62 @@ function drawRoomPage(
 ) {
   const { evaluation } = input;
   const space = evaluation.spaces.find((item) => item.id === analysis.spaceId);
-  if (!space) return;
+  if (!space) return page;
 
   const roomName = displaySpaceName(space);
   const photo = photoForSpace(evaluation, space.id);
-  const { fixes, positives } = roomContentSelection(evaluation, analysis);
+  const positives = analysis.visibleFindings.filter(
+    (finding) => finding.kind === "positive",
+  );
+  const fixes = evaluation.recommendations
+    .filter(
+      (recommendation) =>
+        recommendation.spaceId === analysis.spaceId && recommendation.selected,
+    )
+    .sort((a, b) => b.scoreImpact - a.scoreImpact);
 
-  heading(doc, roomName, 22, 21);
+  let y = 22;
+
+  heading(doc, roomName, y, 21);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(7);
   doc.setTextColor(...MUTED);
-  doc.text("INDIVIDUAL SPACE EVALUATION", M, 30);
+  doc.text("INDIVIDUAL SPACE EVALUATION", M, y + 8);
 
+  const topY = y + 16;
   if (photo?.dataUrl) {
-    addImageCover(doc, photo.dataUrl, M, 38, 68, 48);
+    addImageCover(doc, photo.dataUrl, M, topY, 68, 48);
   } else {
     doc.setFillColor(...LIGHT);
-    doc.roundedRect(M, 38, 68, 48, 3, 3, "F");
+    doc.roundedRect(M, topY, 68, 48, 3, 3, "F");
   }
 
-  scoreCard(doc, 91, 38, 32, "Current", analysis.currentScore);
-  scoreCard(doc, 128, 38, 32, "Potential", analysis.potentialScore);
-  scoreCard(doc, 165, 38, 34, "Confidence", analysis.confidence);
+  scoreCard(doc, 91, topY, 32, "Current", analysis.currentScore);
+  scoreCard(doc, 128, topY, 32, "Potential", analysis.potentialScore);
+  scoreCard(doc, 165, topY, 34, "Confidence", analysis.confidence);
 
-  let y = 98;
+  y = topY + 60;
 
   if (positives.length) {
     doc.setFont("helvetica", "bold");
     doc.setFontSize(11);
     doc.setTextColor(...NAVY);
     doc.text("What Presents Well", M, y);
-    y += 7;
+    y += 8;
 
     for (const finding of positives) {
+      const continuation = ensureRoomContinuation(
+        doc,
+        page,
+        y,
+        24,
+        roomName,
+      );
+      page = continuation.page;
+      y = continuation.y;
+
       doc.setDrawColor(...BORDER);
-      doc.roundedRect(M, y, PAGE_W - M * 2, 20, 3, 3, "S");
+      doc.roundedRect(M, y, PAGE_W - M * 2, 21, 3, 3, "S");
 
       doc.setFont("helvetica", "bold");
       doc.setFontSize(6.5);
@@ -381,21 +389,40 @@ function drawRoomPage(
         6.8,
       );
 
-      y += 23;
+      y += 24;
     }
   }
 
   if (fixes.length) {
-    y += positives.length ? 2 : 0;
+    const continuation = ensureRoomContinuation(
+      doc,
+      page,
+      y + 3,
+      30,
+      roomName,
+    );
+    page = continuation.page;
+    y = continuation.y + 3;
+
     doc.setFont("helvetica", "bold");
     doc.setFontSize(11);
     doc.setTextColor(...NAVY);
-    doc.text("Highest-Impact Improvements", M, y);
-    y += 7;
+    doc.text("Opportunities to Raise This Score", M, y);
+    y += 8;
 
     for (const rec of fixes) {
+      const next = ensureRoomContinuation(
+        doc,
+        page,
+        y,
+        26,
+        roomName,
+      );
+      page = next.page;
+      y = next.y;
+
       doc.setDrawColor(...BORDER);
-      doc.roundedRect(M, y, PAGE_W - M * 2, 22, 3, 3, "S");
+      doc.roundedRect(M, y, PAGE_W - M * 2, 23, 3, 3, "S");
 
       doc.setFont("helvetica", "bold");
       doc.setFontSize(8.3);
@@ -422,27 +449,12 @@ function drawRoomPage(
         6.8,
       );
 
-      y += 25;
+      y += 26;
     }
   }
 
-  const totalSelectedFixes = evaluation.recommendations.filter(
-    (recommendation) =>
-      recommendation.spaceId === analysis.spaceId && recommendation.selected,
-  ).length;
-
-  if (totalSelectedFixes > fixes.length && y < PAGE_H - 32) {
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(7);
-    doc.setTextColor(...MUTED);
-    doc.text(
-      "Additional selected improvements are included in the final preparation plan.",
-      M,
-      y + 3,
-    );
-  }
-
   drawFooter(doc, page);
+  return page;
 }
 
 function drawPrioritySummary(doc: jsPDF, input: ReportInput, page: number) {
@@ -558,9 +570,8 @@ export function createListingEvaluationV2Pdf(input: ReportInput) {
   page = drawOverview(doc, input, page);
 
   for (const analysis of sortedAnalysesByImpact(input.evaluation)) {
-    doc.addPage();
-    page += 1;
-    drawRoomPage(doc, input, analysis, page);
+    const fresh = startFreshRoomPage(doc, page);
+    page = drawRoomSection(doc, input, analysis, fresh.page);
   }
 
   doc.addPage();
