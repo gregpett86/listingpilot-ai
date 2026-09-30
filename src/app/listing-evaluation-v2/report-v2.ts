@@ -231,22 +231,27 @@ function drawCover(doc: jsPDF, input: ReportInput) {
   doc.setFont("helvetica", "bold");
   doc.setFontSize(6.8);
   doc.setTextColor(26, 26, 26);
-  doc.text("YOUR LISTING READINESS EVALUATION", PAGE_W / 2, dividerY + 7, {
-    align: "center",
-    charSpace: 1.5,
-  });
+  doc.text(
+    "YOUR LISTING READINESS EVALUATION",
+    titleBoxX + titleBoxW / 2,
+    dividerY + 7,
+    {
+      align: "center",
+      charSpace: 1.5,
+    },
+  );
 
   const address = property.address || "Property Address";
   const location = property.cityStateZip || "";
   doc.setFontSize(8.2);
-  doc.text(address.toUpperCase(), PAGE_W / 2, dividerY + 14, {
+  doc.text(address.toUpperCase(), titleBoxX + titleBoxW / 2, dividerY + 14, {
     align: "center",
     maxWidth: titleBoxW - 14,
   });
   if (location) {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(6.7);
-    doc.text(location.toUpperCase(), PAGE_W / 2, dividerY + 20, {
+    doc.text(location.toUpperCase(), titleBoxX + titleBoxW / 2, dividerY + 20, {
       align: "center",
       maxWidth: titleBoxW - 14,
     });
