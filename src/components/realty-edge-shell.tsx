@@ -106,7 +106,7 @@ function IconChevron() {
 }
 
 const navItems: NavItem[] = [
-  { href: "#", label: "Dashboard", icon: <IconHome /> },
+  { href: "/demo-dashboard", label: "Dashboard", icon: <IconHome /> },
   { href: "#", label: "New CMA / Property", icon: <IconDoc /> },
   {
     href: "/listing-ai",
