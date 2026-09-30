@@ -101,6 +101,8 @@ export default function ListingEvaluationV2Client() {
   });
   const [spaces, setSpaces] = useState<PropertySpace[]>([]);
   const [photos, setPhotos] = useState<EvaluationPhoto[]>([]);
+  const [coverFrontPhoto, setCoverFrontPhoto] = useState<{ dataUrl: string; name: string } | null>(null);
+  const [coverUploadError, setCoverUploadError] = useState("");
   const [analyses, setAnalyses] = useState<SpaceAnalysis[]>([]);
   const [recommendations, setRecommendations] = useState<
     ImprovementRecommendation[]
@@ -146,12 +148,14 @@ export default function ListingEvaluationV2Client() {
       },
       spaces,
       photos,
+      coverFrontPhoto: coverFrontPhoto?.dataUrl,
+      coverFrontPhotoName: coverFrontPhoto?.name,
       analyses: dynamicAnalyses,
       recommendations,
       createdAt: new Date(0).toISOString(),
       updatedAt: new Date().toISOString(),
     }),
-    [property, spaces, photos, dynamicAnalyses, recommendations],
+    [property, spaces, photos, coverFrontPhoto, dynamicAnalyses, recommendations],
   );
 
   const propertyScores = useMemo(
@@ -191,6 +195,23 @@ export default function ListingEvaluationV2Client() {
       ),
     [recommendations],
   );
+
+  async function uploadFrontCover(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setCoverUploadError("");
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+      setCoverUploadError("Choose a JPG, PNG or WebP photo.");
+      event.target.value = "";
+      return;
+    }
+    try {
+      setCoverFrontPhoto({ dataUrl: await readFile(file), name: file.name });
+    } catch {
+      setCoverUploadError("That photo could not be loaded. Please try another.");
+    }
+    event.target.value = "";
+  }
 
   function generateSpaces() {
     const generated = buildPropertySpaces(counts);
@@ -406,7 +427,39 @@ export default function ListingEvaluationV2Client() {
             </section>
 
             <section className="rounded-2xl border bg-white p-6 shadow-sm">
-              <h2 className="text-xl font-semibold">2. Build the property</h2>
+              <h2 className="text-xl font-semibold">2. Property cover photo</h2>
+              <p className="mt-1 text-sm text-slate-600">
+                Upload the home's front exterior or street-view image for the cover. This photo stays separate
+                from room scoring. Without one, Listing AI uses an exterior photo when available.
+              </p>
+              <div className="mt-5 flex flex-wrap items-center gap-5">
+                {coverFrontPhoto ? (
+                  <img src={coverFrontPhoto.dataUrl} alt="Selected front-of-home cover" className="h-40 w-40 rounded-xl border object-cover" />
+                ) : (
+                  <div className="flex h-40 w-40 items-center justify-center rounded-xl border-2 border-dashed bg-slate-50 p-4 text-center text-sm text-slate-500">
+                    Front / Street View
+                  </div>
+                )}
+                <div className="space-y-3">
+                  <label className="inline-flex cursor-pointer rounded-xl bg-amber-500 px-5 py-3 font-semibold text-slate-950">
+                    {coverFrontPhoto ? "Replace cover photo" : "Upload front / street view"}
+                    <input className="hidden" type="file" accept="image/jpeg,image/png,image/webp" onChange={uploadFrontCover} />
+                  </label>
+                  {coverFrontPhoto && (
+                    <div>
+                      <p className="max-w-xs truncate text-sm text-slate-600">{coverFrontPhoto.name}</p>
+                      <button className="mt-1 text-sm font-medium text-red-700 underline" onClick={() => setCoverFrontPhoto(null)} type="button">
+                        Remove cover photo
+                      </button>
+                    </div>
+                  )}
+                  {coverUploadError && <p className="text-sm text-red-700" role="alert">{coverUploadError}</p>}
+                </div>
+              </div>
+            </section>
+
+            <section className="rounded-2xl border bg-white p-6 shadow-sm">
+              <h2 className="text-xl font-semibold">3. Build the property</h2>
               <p className="mt-1 text-sm text-slate-600">
                 Add as many instances as the property actually has. Names can be changed later.
               </p>
