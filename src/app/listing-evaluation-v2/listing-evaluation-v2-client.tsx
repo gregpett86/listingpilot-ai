@@ -375,7 +375,7 @@ export default function ListingEvaluationV2Client() {
           <p className="text-sm font-semibold uppercase tracking-[0.2em] text-amber-600">
             Realty Edge Pro
           </p>
-          <h1 className="mt-2 text-3xl font-semibold">Listing Evaluation V2</h1>
+          <h1 className="mt-2 text-3xl font-semibold">Listing AI</h1>
           <p className="mt-2 max-w-3xl text-sm text-slate-600">
             Room-by-room photo analysis, deterministic scoring and prioritized
             seller preparation.
