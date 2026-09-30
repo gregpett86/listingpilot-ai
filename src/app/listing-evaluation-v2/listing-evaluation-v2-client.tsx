@@ -72,6 +72,33 @@ function readFile(file: File) {
   });
 }
 
+/** Center-crop only the optional report cover photo, never room-analysis photos. */
+async function squareCoverPhoto(file: File): Promise<string> {
+  const image = await createImageBitmap(file);
+  try {
+    const side = Math.min(image.width, image.height);
+    const canvas = document.createElement("canvas");
+    canvas.width = 1400;
+    canvas.height = 1400;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Image canvas is unavailable.");
+    ctx.drawImage(
+      image,
+      (image.width - side) / 2,
+      (image.height - side) / 2,
+      side,
+      side,
+      0,
+      0,
+      1400,
+      1400,
+    );
+    return canvas.toDataURL("image/jpeg", 0.9);
+  } finally {
+    image.close();
+  }
+}
+
 function coverageForPhotoCount(count: number): SpaceAnalysis["coverage"] {
   if (count >= 4) return "excellent";
   if (count >= 2) return "good";
@@ -206,7 +233,7 @@ export default function ListingEvaluationV2Client() {
       return;
     }
     try {
-      setCoverFrontPhoto({ dataUrl: await readFile(file), name: file.name });
+      setCoverFrontPhoto({ dataUrl: await squareCoverPhoto(file), name: file.name });
     } catch {
       setCoverUploadError("That photo could not be loaded. Please try another.");
     }
