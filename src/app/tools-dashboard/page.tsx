@@ -1,42 +1,68 @@
 import Link from "next/link";
-import { RepToolsShell, ToolsPageHeader } from "@/components/rep-tools-shell";
+import { RepToolsShell } from "@/components/rep-tools-shell";
 
 const tools = [
-  { eyebrow: "CMA", title: "Create CMA", description: "Build a polished, agent-branded comparative market analysis for a homeowner.", href: "/tools/cma", button: "Create New CMA" },
-  { eyebrow: "CMA", title: "CMA Reports", description: "Open the workspace for saved and completed CMA reports.", href: "/tools/cma-reports", button: "View CMA Reports" },
-  { eyebrow: "LISTING AI", title: "Create Listing AI", description: "Evaluate a property room by room and create a seller-facing listing-readiness report.", href: "/tools/listing-ai", button: "Start Listing AI" },
-  { eyebrow: "LISTING AI", title: "Listing AI Reports", description: "View the Listing AI reports area and continue working with prior evaluations.", href: "/tools/listing-ai-reports", button: "View Listing AI Reports" },
+  { title: "Create CMA", description: "Generate professional comparative market analyses in minutes.", enabled: false, href: "" },
+  { title: "CMA Reports", description: "View and manage your CMA reports.", enabled: false, href: "" },
+  { title: "Create Listing AI", description: "Analyze a home room-by-room and build a seller-ready evaluation.", enabled: true, href: "/tools/listing-ai" },
+  { title: "Listing AI Reports", description: "Access and manage your saved Listing AI reports.", enabled: true, href: "/tools/listing-ai-reports" },
 ];
 
 export default function ToolsDashboardPage() {
   return (
-    <RepToolsShell activeLabel="Dashboard">
-      <ToolsPageHeader eyebrow="REALTY EDGE PRO TOOLS" title="Agent Tools Dashboard" description="One simple workspace for CMA reports and Listing AI." />
-      <div className="mx-auto max-w-6xl p-6 sm:p-9">
-        <section className="overflow-hidden rounded-2xl bg-[#082442] px-6 py-7 text-white sm:px-8">
-          <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-[#D4A017]">Your listing toolkit</p>
-          <div className="mt-2 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <h2 className="text-2xl font-black sm:text-3xl">Create better seller presentations from one place.</h2>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-white/65">Build a CMA, evaluate listing readiness, and keep your reports organized without the rest of the full Realty Edge Pro platform.</p>
+    <RepToolsShell>
+      <div className="min-h-full bg-[#EEE9E0]">
+        <header className="border-b border-[#DED8CF] bg-[#F8F5EF] px-6 py-5 sm:px-10">
+          <div className="mx-auto flex max-w-7xl items-center justify-between gap-6">
+            <div className="hidden w-full max-w-md rounded-xl border border-[#D8D2C9] bg-white px-4 py-3 text-sm text-[#96928A] md:block">Search properties, reports, clients...</div>
+            <div className="ml-auto text-right">
+              <p className="text-sm font-bold text-[#082442]">Realty Edge Tools</p>
+              <p className="text-xs text-[#85817A]">Listing intelligence workspace</p>
             </div>
-            <div className="rounded-xl border border-[#D4A017]/40 bg-white/5 px-4 py-3 text-sm text-white/80">CMA Builder <span className="mx-2 text-[#D4A017]">+</span> Listing AI</div>
           </div>
-        </section>
+        </header>
 
-        <div className="mt-6 grid gap-5 md:grid-cols-2">
-          {tools.map((tool) => (
-            <article key={tool.title} className="flex min-h-[225px] flex-col rounded-2xl border border-[#E5E7EB] bg-white p-6 shadow-[0_14px_34px_rgba(8,36,66,0.07)]">
-              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#9A7100]">{tool.eyebrow}</p>
-              <h3 className="mt-2 text-xl font-black text-[#082442]">{tool.title}</h3>
-              <p className="mt-2 flex-1 text-sm leading-6 text-[#6B7280]">{tool.description}</p>
-              <Link href={tool.href} className="mt-6 inline-flex w-fit items-center rounded-xl bg-[#082442] px-5 py-3 text-sm font-extrabold text-white no-underline transition hover:bg-[#04182D]">{tool.button} <span className="ml-2 text-[#D4A017]">→</span></Link>
-            </article>
-          ))}
-        </div>
+        <div className="mx-auto max-w-7xl px-6 py-8 sm:px-10">
+          <section className="grid gap-6 border-b border-[#D8D2C9] pb-8 lg:grid-cols-[1fr_auto] lg:items-end">
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-[#9A7100]">REALTY EDGE TOOLS</p>
+              <h1 className="mt-3 font-serif text-4xl font-semibold tracking-[-0.035em] text-[#101722] sm:text-5xl">Welcome to Realty Edge Tools</h1>
+              <p className="mt-3 text-lg text-[#686B72]">Powerful tools. Sharper insights. A faster path to your next listing.</p>
+            </div>
+            <p className="max-w-[260px] border-l border-[#CFC8BE] pl-6 font-serif text-lg italic leading-7 text-[#6F6A63]">“Better data.<br/>Brighter opportunities.”</p>
+          </section>
 
-        <div className="mt-6 rounded-2xl border border-[#E8D9B0] bg-[#FFF9EA] px-5 py-4 text-sm leading-6 text-[#66501E]">
-          <strong>Isolated build:</strong> this dashboard lives only in the Listing AI project. It is not connected to or modifying the live Realty Edge Pro dashboard or the CMA repository.
+          <section className="mt-7 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            {tools.map((tool, index) => (
+              <article key={tool.title} className="flex min-h-[250px] flex-col rounded-2xl border border-[#DDD7CE] bg-[#F9F7F2] p-6 shadow-[0_10px_30px_rgba(46,42,35,0.05)]">
+                <div className="grid h-12 w-12 place-items-center rounded-xl bg-[#E7EBF0] text-[#082442]">
+                  <span className="font-serif text-xl font-bold">{index + 1}</span>
+                </div>
+                <h2 className="mt-5 font-serif text-2xl font-semibold text-[#111722]">{tool.title}</h2>
+                <p className="mt-2 flex-1 text-sm leading-6 text-[#696D74]">{tool.description}</p>
+                {tool.enabled ? (
+                  <Link href={tool.href} className="mt-5 inline-flex items-center justify-between rounded-xl bg-[#082442] px-5 py-3 text-sm font-bold text-[#D4A017] no-underline shadow-sm transition hover:bg-[#04182D]">
+                    {tool.title.startsWith("Create") ? "Open Tool" : "View Reports"} <span>→</span>
+                  </Link>
+                ) : (
+                  <div className="mt-5 inline-flex items-center justify-between rounded-xl border border-[#D7D0C6] bg-[#F2EEE7] px-5 py-3 text-sm font-semibold text-[#8C8881]">
+                    Coming next <span>—</span>
+                  </div>
+                )}
+              </article>
+            ))}
+          </section>
+
+          <section className="mt-6 rounded-2xl border border-[#DDD7CE] bg-[#F9F7F2] p-6 sm:p-8">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#9A7100]">REPORT LIBRARY</p>
+                <h2 className="mt-2 font-serif text-2xl font-semibold text-[#082442]">Your reports stay organized here.</h2>
+                <p className="mt-2 text-sm text-[#6D7077]">Listing AI reports created from this dashboard are saved in the browser and available from Listing AI Reports.</p>
+              </div>
+              <Link href="/tools/listing-ai-reports" className="inline-flex rounded-xl border border-[#082442] px-5 py-3 text-sm font-bold text-[#082442] no-underline">View Listing AI Reports →</Link>
+            </div>
+          </section>
         </div>
       </div>
     </RepToolsShell>
