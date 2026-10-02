@@ -484,6 +484,44 @@ export default function ListingEvaluationV2Client() {
     );
   }
 
+  async function generateAndSaveReport() {
+    const now = new Date().toISOString();
+    const profile = loadRepToolsProfile();
+    const finalEvaluation: ListingEvaluationV2 = {
+      ...evaluation,
+      id: `listing-ai-${Date.now()}`,
+      currentScore: propertyScores.currentScore,
+      potentialScore: propertyScores.potentialScore,
+      confidence: propertyScores.confidence,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    const reportAgent = {
+      name: profile.fullName || agent.name || "Your Real Estate Professional",
+      brokerage: profile.brokerageName || agent.brokerage || "Realty Edge Pro",
+      phone: profile.phone || agent.phone,
+      email: profile.email || agent.email,
+      headshotDataUrl: profile.headshotDataUrl || undefined,
+    };
+
+    try {
+      await saveListingAiReport({
+        id: finalEvaluation.id,
+        evaluation: finalEvaluation,
+        agent: reportAgent,
+      });
+      setDraftMessage("Listing AI report saved to Listing AI Reports.");
+    } catch {
+      setDraftMessage("The PDF will download, but this browser could not save the report.");
+    }
+
+    downloadListingEvaluationV2Pdf({
+      evaluation: finalEvaluation,
+      agent: reportAgent,
+    });
+  }
+
   return (
     <main className="min-h-screen bg-slate-50 px-4 py-8 text-slate-900 sm:px-6">
       <div className="mx-auto max-w-7xl space-y-6">
