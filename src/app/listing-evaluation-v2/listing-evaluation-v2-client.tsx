@@ -12,6 +12,8 @@ import {
 } from "@/lib/listing-evaluation-v2/scoring";
 import { buildRecommendationsFromAgentCandidates } from "@/lib/listing-evaluation-v2/recommendation-impact";
 import { loadListingAiDraft, saveListingAiDraft } from "@/lib/listing-evaluation-v2/draft-storage";
+import { saveListingAiReport } from "@/lib/listing-evaluation-v2/report-storage";
+import { loadRepToolsProfile } from "@/lib/rep-tools/profile-storage";
 import {
   displaySpaceName,
   type EvaluationPhoto,
@@ -787,28 +789,13 @@ export default function ListingEvaluationV2Client() {
             <section className="rounded-2xl border bg-white p-6 shadow-sm">
               <h2 className="text-xl font-semibold">Generate seller report</h2>
               <p className="mt-1 text-sm text-slate-600">
-                Property details above will be used in the report. Agent name, headshot, brokerage and logo will auto-populate from the Realty Edge Pro profile when Listing AI is connected to the main dashboard.
+                Property details above will be used in the report. Agent name, headshot, brokerage, phone and email are pulled from the Profile page in this dashboard.
               </p>
               {draftMessage ? <p className="mt-2 text-xs font-medium text-emerald-700">{draftMessage}</p> : null}
               <button
                 className="mt-6 rounded-xl bg-slate-900 px-5 py-3 font-semibold text-white disabled:opacity-40"
                 disabled={!dynamicAnalyses.length}
-                onClick={() =>
-                  downloadListingEvaluationV2Pdf({
-                    evaluation: {
-                      ...evaluation,
-                      currentScore: propertyScores.currentScore,
-                      potentialScore: propertyScores.potentialScore,
-                      confidence: propertyScores.confidence,
-                    },
-                    agent: {
-                      name: agent.name || "Your Real Estate Professional",
-                      brokerage: agent.brokerage || "Realty Edge Pro",
-                      phone: agent.phone,
-                      email: agent.email,
-                    },
-                  })
-                }
+                onClick={() => void generateAndSaveReport()}
               >
                 Generate seller report
               </button>
