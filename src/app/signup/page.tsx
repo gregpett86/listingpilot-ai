@@ -1,10 +1,13 @@
-import RepToolsAuthCard from "@/components/rep-tools-auth-card";
 import RepToolsAuthLayout from "@/components/rep-tools-auth-layout";
+import SignupClient from "./signup-client";
+import { repToolsBillingMode, stripeConfig } from "@/lib/rep-tools/server-config";
 
 export default function SignupPage() {
+  const billingMode = repToolsBillingMode();
+  const { publishableKey } = stripeConfig();
   return (
     <RepToolsAuthLayout>
-      <RepToolsAuthCard mode="signup" />
+      <SignupClient billingMode={billingMode} publishableKey={publishableKey} />
     </RepToolsAuthLayout>
   );
 }
