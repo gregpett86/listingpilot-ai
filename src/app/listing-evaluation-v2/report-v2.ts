@@ -337,72 +337,6 @@ function sortedAnalysesByImpact(evaluation: ListingEvaluationV2) {
   });
 }
 
-function drawOverview(doc: jsPDF, input: ReportInput, page: number) {
-  const { evaluation } = input;
-  heading(doc, "Property Score Overview", 22);
-  subtext(
-    doc,
-    "Each area is scored independently from the visible presentation in the uploaded photos. Potential reflects the selected preparation items.",
-    M,
-    30,
-    PAGE_W - M * 2,
-  );
-
-  scoreCard(doc, M, 42, 54, "Overall current", evaluation.currentScore ?? "—");
-  scoreCard(doc, M + 60, 42, 54, "Overall potential", evaluation.potentialScore ?? "—");
-  scoreCard(doc, M + 120, 42, 54, "Confidence", evaluation.confidence ?? "—");
-
-  const analyses = sortedAnalysesByImpact(evaluation)
-    .map((analysis) => ({
-      analysis,
-      space: evaluation.spaces.find((space) => space.id === analysis.spaceId),
-    }))
-    .filter((item): item is { analysis: SpaceAnalysis; space: PropertySpace } => Boolean(item.space));
-
-  let y = 76;
-  for (const item of analyses) {
-    if (y > 238) {
-      drawFooter(doc, page);
-      doc.addPage();
-      page += 1;
-      heading(doc, "Property Score Overview", 22);
-      y = 34;
-    }
-
-    const photo = photoForSpace(evaluation, item.space.id);
-    doc.setDrawColor(...BORDER);
-    doc.roundedRect(M, y, PAGE_W - M * 2, 31, 3, 3, "S");
-
-    if (photo?.dataUrl) {
-      addImageCover(doc, photo.dataUrl, M + 2, y + 2, 38, 27);
-    } else {
-      doc.setFillColor(...LIGHT);
-      doc.roundedRect(M + 2, y + 2, 38, 27, 2, 2, "F");
-    }
-
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(11);
-    doc.setTextColor(...NAVY);
-    doc.text(displaySpaceName(item.space), M + 46, y + 10);
-
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(8);
-    doc.setTextColor(...MUTED);
-    doc.text(`Current ${item.analysis.currentScore}`, M + 46, y + 19);
-    doc.text(`Potential ${item.analysis.potentialScore}`, M + 82, y + 19);
-    doc.text(
-      `${item.analysis.confidence.toUpperCase()} confidence`,
-      M + 126,
-      y + 19,
-    );
-
-    y += 36;
-  }
-
-  drawFooter(doc, page);
-  return page;
-}
-
 function startFreshRoomPage(doc: jsPDF, page: number) {
   doc.addPage();
   return { page: page + 1, y: 22 };
@@ -695,9 +629,7 @@ export function createListingEvaluationV2Pdf(input: ReportInput) {
 
   drawCover(doc, input);
 
-  doc.addPage();
-  let page = 2;
-  page = drawOverview(doc, input, page);
+  let page = 1;
 
   for (const analysis of sortedAnalysesByImpact(input.evaluation)) {
     const fresh = startFreshRoomPage(doc, page);
