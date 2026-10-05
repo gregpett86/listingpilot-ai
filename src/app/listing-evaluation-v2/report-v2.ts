@@ -6,6 +6,7 @@ import type {
   SpaceAnalysis,
 } from "@/lib/listing-evaluation-v2/types";
 import { displaySpaceName } from "@/lib/listing-evaluation-v2/types";
+import { REP_REPORT_LOGO_DATA_URL } from "@/lib/rep-tools/report-logo-data";
 
 type AgentDetails = {
   name: string;
@@ -307,23 +308,26 @@ function drawCover(doc: jsPDF, input: ReportInput) {
     avatarCY + 5,
   );
 
-  // REP brand mark on the right. This mirrors the CMA logo position and
-  // can later be replaced by the agent/brokerage logo when REP profile data is connected.
-  const brandX = PAGE_W - 47;
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(6.2);
-  doc.setTextColor(27, 34, 56);
-  doc.text("REALTY", brandX, avatarCY - 5, { align: "center" });
-  doc.setFontSize(10);
-  doc.text("EDGE", brandX, avatarCY + 1, { align: "center" });
-  doc.setTextColor(212, 165, 116);
-  doc.text("PRO", brandX + 12, avatarCY + 1, { align: "center" });
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(4.8);
-  doc.setTextColor(102, 102, 102);
-  doc.text("PREDICT • PREPARE • LIST", brandX, avatarCY + 7, {
-    align: "center",
-  });
+  // Official Realty Edge Pro logo on the report's beige agent strip.
+  // The source image is prepared on the same beige background so it blends cleanly.
+  const logoW = 48;
+  const logoH = 27.3;
+  const logoX = PAGE_W - M - logoW;
+  const logoY = agentBarY + (agentBarH - logoH) / 2;
+  try {
+    doc.addImage(
+      REP_REPORT_LOGO_DATA_URL,
+      "JPEG",
+      logoX,
+      logoY,
+      logoW,
+      logoH,
+      undefined,
+      "FAST",
+    );
+  } catch {
+    // Keep the agent strip intact if the logo image cannot render.
+  }
 }
 
 function sortedAnalysesByImpact(evaluation: ListingEvaluationV2) {
