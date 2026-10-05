@@ -50,7 +50,7 @@ export default function SignupClient({ billingMode, publishableKey }: { billingM
         {step === "account" ? "Create your account" : "Complete your membership"}
       </h1>
       <p className="mt-3 text-sm leading-6 text-[#6D7077]">
-        One membership includes CMA Builder, Listing AI, saved reports and agent branding.
+        Get CMA Builder and Listing AI together for $49/month, including saved reports and agent branding.
       </p>
 
       {step === "account" ? (
@@ -60,8 +60,8 @@ export default function SignupClient({ billingMode, publishableKey }: { billingM
           <label className="block"><span className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#6E7076]">Password</span><input className={input} autoComplete="new-password" type="password" minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} /></label>
 
           <div className="rounded-xl border border-[#DDD7CE] bg-[#F3EFE7] px-4 py-4">
-            <div className="flex items-center justify-between gap-4"><span className="font-serif text-lg font-semibold text-[#082442]">Realty Edge Tools Membership</span><span className="text-xs font-bold uppercase tracking-[0.12em] text-[#9A7100]">One plan</span></div>
-            <p className="mt-2 text-xs leading-5 text-[#6D7077]">CMA Builder + Listing AI + report library + agent branding. The exact subscription price is shown securely in the payment form.</p>
+            <div className="flex items-center justify-between gap-4"><span className="font-serif text-lg font-semibold text-[#082442]">Realty Edge Tools</span><span className="font-serif text-xl font-semibold text-[#082442]">$49<span className="text-xs font-sans font-semibold text-[#6D7077]">/month</span></span></div>
+            <p className="mt-2 text-xs leading-5 text-[#6D7077]">CMA Builder + Listing AI + report library + agent branding. One simple $49/month membership.</p>
           </div>
 
           {billingMode === "open" && <div className="rounded-xl border border-[#E4D8B5] bg-[#FFF8E8] px-4 py-3 text-xs leading-5 text-[#735A1A]"><strong>Testing mode:</strong> payment gating is currently open until Stripe is connected.</div>}
