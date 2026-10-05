@@ -18,6 +18,53 @@ function readImage(file: File) {
   });
 }
 
+async function cropHeadshotToCircle(file: File) {
+  const dataUrl = await readImage(file);
+  return new Promise<string>((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => {
+      const size = 900;
+      const canvas = document.createElement("canvas");
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        reject(new Error("Image canvas is unavailable."));
+        return;
+      }
+
+      const sourceSize = Math.min(image.naturalWidth, image.naturalHeight);
+      const sourceX = Math.max(0, (image.naturalWidth - sourceSize) / 2);
+      // Bias the crop slightly upward so faces sit naturally inside the circle.
+      const centeredY = Math.max(0, (image.naturalHeight - sourceSize) / 2);
+      const sourceY = Math.max(0, centeredY - sourceSize * 0.08);
+
+      ctx.clearRect(0, 0, size, size);
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(size / 2, size / 2, size / 2 - 6, 0, Math.PI * 2);
+      ctx.closePath();
+      ctx.clip();
+      ctx.drawImage(
+        image,
+        sourceX,
+        sourceY,
+        sourceSize,
+        sourceSize,
+        0,
+        0,
+        size,
+        size,
+      );
+      ctx.restore();
+
+      resolve(canvas.toDataURL("image/png"));
+    };
+    image.onerror = () => reject(new Error("Unable to load that headshot."));
+    image.src = dataUrl;
+  });
+}
+
 export default function ToolsProfilePage() {
   const [profile, setProfile] = useState<RepToolsProfile>(emptyRepToolsProfile);
   const [saved, setSaved] = useState("");
@@ -32,7 +79,12 @@ export default function ToolsProfilePage() {
   async function upload(event: ChangeEvent<HTMLInputElement>, key: "headshotDataUrl" | "logoDataUrl") {
     const file = event.target.files?.[0];
     if (!file) return;
-    update(key, await readImage(file));
+    update(
+      key,
+      key === "headshotDataUrl"
+        ? await cropHeadshotToCircle(file)
+        : await readImage(file),
+    );
     event.target.value = "";
   }
 
@@ -54,7 +106,7 @@ export default function ToolsProfilePage() {
             <div>
               <label className="group block cursor-pointer text-center">
                 <div className="mx-auto grid h-36 w-36 place-items-center overflow-hidden rounded-full border-4 border-[#E3DDD4] bg-[#EEE9E0] shadow-sm">
-                  {profile.headshotDataUrl ? <img src={profile.headshotDataUrl} alt="Agent headshot" className="h-full w-full object-cover" /> : <span className="font-serif text-4xl text-[#9A7100]">RP</span>}
+                  {profile.headshotDataUrl ? <img src={profile.headshotDataUrl} alt="Agent headshot" className="h-full w-full object-cover object-[center_25%]" /> : <span className="font-serif text-4xl text-[#9A7100]">RP</span>}
                 </div>
                 <span className="mt-3 block text-sm font-semibold text-[#082442]">Upload headshot</span>
                 <input type="file" accept="image/*" className="hidden" onChange={(event) => upload(event, "headshotDataUrl")} />
@@ -76,8 +128,8 @@ export default function ToolsProfilePage() {
             <p className="mt-1 text-sm text-[#787B82]">Upload the logo you want associated with your reports.</p>
           </div>
           <div className="grid gap-6 p-6 md:grid-cols-[minmax(220px,360px)_1fr] md:items-center">
-            <div className="grid min-h-[170px] place-items-center overflow-hidden rounded-2xl border border-[#D7D0C7] bg-[#082442] p-6">
-              {profile.logoDataUrl ? <img src={profile.logoDataUrl} alt="Brokerage logo" className="max-h-28 max-w-full object-contain" /> : <span className="font-serif text-xl font-semibold text-[#D4A017]">Your Logo</span>}
+            <div className="grid min-h-[170px] place-items-center overflow-hidden rounded-2xl border border-[#D7D0C7] bg-[#F5F3EF] p-6">
+              {profile.logoDataUrl ? <img src={profile.logoDataUrl} alt="Brokerage logo" className="max-h-28 max-w-full object-contain" /> : <span className="font-serif text-xl font-semibold text-[#082442]">Your Logo</span>}
             </div>
             <div>
               <h3 className="font-serif text-xl font-semibold text-[#082442]">Logo</h3>
