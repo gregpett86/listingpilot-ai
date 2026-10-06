@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { ReactNode, useEffect, useState } from "react";
 
@@ -45,7 +44,7 @@ function Sidebar({ activeLabel, close }: { activeLabel?: string; close?: () => v
   return (
     <aside className="flex h-full w-[252px] min-w-[252px] flex-col border-r border-[#DED8CF] bg-[#F4F0E8] text-[#1E2430]">
       <Link href="/tools-dashboard" className="flex min-h-[94px] items-center border-b border-[#DED8CF] px-6 no-underline">
-        <Image src="/logo_gold.png" alt="Realty Edge Pro" width={176} height={60} className="h-auto w-[176px]" priority />
+        <img src="/rep-tools-logo.svg" alt="Realty Edge Pro" className="h-auto w-[190px] max-w-full" />
       </Link>
       <nav className="flex-1 px-4 py-6">
         {nav.map((item) => {
