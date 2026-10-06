@@ -28,7 +28,7 @@ export default function ListingAiReportsClient() {
     const doc = createListingEvaluationV2Pdf({ evaluation: report.evaluation, agent: report.agent });
     const address = report.evaluation.property.address || "listing-evaluation";
     const safe = address.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase();
-    doc.save(`${safe}-listing-readiness-evaluation.pdf`);
+    doc.save(`${safe}-listing-ai-dashboard-report.pdf`);
   }
 
   async function remove(id: string) {
