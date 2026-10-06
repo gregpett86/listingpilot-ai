@@ -112,6 +112,52 @@ function addImageCover(
   } catch {}
 }
 
+
+function addCircularCoverImage(
+  doc: jsPDF,
+  dataUrl: string,
+  cx: number,
+  cy: number,
+  radius: number,
+) {
+  try {
+    const props = doc.getImageProperties(dataUrl);
+    const ratio = props.width / props.height;
+    const diameter = radius * 2;
+
+    let drawW = diameter;
+    let drawH = diameter;
+    let drawX = cx - radius;
+    let drawY = cy - radius;
+
+    if (ratio > 1) {
+      drawW = diameter * ratio;
+      drawX = cx - drawW / 2;
+    } else if (ratio < 1) {
+      drawH = diameter / ratio;
+      drawY = cy - drawH * 0.34;
+    }
+
+    doc.saveGraphicsState();
+    doc.circle(cx, cy, radius, "S");
+    doc.clip();
+    doc.discardPath();
+    doc.addImage(
+      dataUrl,
+      props.fileType || "JPEG",
+      drawX,
+      drawY,
+      drawW,
+      drawH,
+      undefined,
+      "FAST",
+    );
+    doc.restoreGraphicsState();
+  } catch {
+    // Leave the neutral inner circle visible if the headshot cannot render.
+  }
+}
+
 function heading(doc: jsPDF, text: string, y: number, size = 18) {
   doc.setFont("helvetica", "bold");
   doc.setFontSize(size);
@@ -274,13 +320,12 @@ function drawCover(doc: jsPDF, input: ReportInput) {
   doc.circle(avatarCX, avatarCY, avatarR + 0.5, "F");
 
   if (agent.headshotDataUrl) {
-    addImageCover(
+    addCircularCoverImage(
       doc,
       agent.headshotDataUrl,
-      avatarCX - avatarR,
-      avatarCY - avatarR,
-      avatarR * 2,
-      avatarR * 2,
+      avatarCX,
+      avatarCY,
+      avatarR,
     );
   } else {
     doc.setFillColor(27, 34, 56);
