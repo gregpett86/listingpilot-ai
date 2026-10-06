@@ -431,140 +431,153 @@ function drawRoomSection(
 
   const roomName = displaySpaceName(space);
   const photo = photoForSpace(evaluation, space.id);
-  const positives = analysis.visibleFindings.filter(
-    (finding) => finding.kind === "positive",
-  );
+  const positives = analysis.visibleFindings
+    .filter((finding) => finding.kind === "positive")
+    .slice(0, 5);
   const fixes = evaluation.recommendations
     .filter(
       (recommendation) =>
         recommendation.spaceId === analysis.spaceId && recommendation.selected,
     )
-    .sort((a, b) => b.scoreImpact - a.scoreImpact);
+    .sort((a, b) => b.scoreImpact - a.scoreImpact)
+    .slice(0, 5);
 
-  let y = 22;
+  // One room = one clean page. No continuation pages.
+  doc.setFillColor(255, 255, 255);
+  doc.rect(0, 0, PAGE_W, PAGE_H, "F");
 
-  heading(doc, roomName, y, 21);
+  heading(doc, roomName, 20, 21);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(7);
   doc.setTextColor(...MUTED);
-  doc.text("INDIVIDUAL SPACE EVALUATION", M, y + 8);
+  doc.text("INDIVIDUAL SPACE EVALUATION", M, 28);
 
-  const topY = y + 16;
+  // One representative photo sits directly below the room name.
+  const photoY = 35;
+  const photoH = 76;
   if (photo?.dataUrl) {
-    addImageCover(doc, photo.dataUrl, M, topY, 68, 48);
+    try {
+      const props = doc.getImageProperties(photo.dataUrl);
+      const frameW = PAGE_W - M * 2;
+      const ratio = props.width / props.height;
+      const frameRatio = frameW / photoH;
+      let drawW = frameW;
+      let drawH = photoH;
+      let drawX = M;
+      let drawY = photoY;
+
+      // Preserve aspect ratio and center-crop to the wide photo frame.
+      if (ratio > frameRatio) {
+        drawW = photoH * ratio;
+        drawX = M - (drawW - frameW) / 2;
+      } else {
+        drawH = frameW / ratio;
+        drawY = photoY - (drawH - photoH) / 2;
+      }
+
+      doc.saveGraphicsState();
+      doc.rect(M, photoY, frameW, photoH);
+      doc.clip();
+      doc.discardPath();
+      doc.addImage(
+        photo.dataUrl,
+        props.fileType || "JPEG",
+        drawX,
+        drawY,
+        drawW,
+        drawH,
+        undefined,
+        "FAST",
+      );
+      doc.restoreGraphicsState();
+    } catch {
+      doc.setFillColor(...LIGHT);
+      doc.roundedRect(M, photoY, PAGE_W - M * 2, photoH, 3, 3, "F");
+    }
   } else {
     doc.setFillColor(...LIGHT);
-    doc.roundedRect(M, topY, 68, 48, 3, 3, "F");
+    doc.roundedRect(M, photoY, PAGE_W - M * 2, photoH, 3, 3, "F");
   }
 
-  scoreCard(doc, 91, topY, 32, "Current", analysis.currentScore);
-  scoreCard(doc, 128, topY, 32, "Potential", analysis.potentialScore);
-  scoreCard(doc, 165, topY, 34, "Confidence", analysis.confidence);
+  const scoreY = 119;
+  const gap = 5;
+  const scoreW = (PAGE_W - M * 2 - gap * 2) / 3;
+  scoreCard(doc, M, scoreY, scoreW, "Current", analysis.currentScore);
+  scoreCard(doc, M + scoreW + gap, scoreY, scoreW, "Potential", analysis.potentialScore);
+  scoreCard(doc, M + (scoreW + gap) * 2, scoreY, scoreW, "Confidence", analysis.confidence);
 
-  y = topY + 60;
+  const sectionY = 153;
+  const columnGap = 9;
+  const columnW = (PAGE_W - M * 2 - columnGap) / 2;
+  const leftX = M;
+  const rightX = M + columnW + columnGap;
 
-  if (positives.length) {
+  function drawCompactList(
+    title: string,
+    items: Array<{ title: string; detail: string; impact?: number }>,
+    x: number,
+    y: number,
+    accent: PdfColor,
+  ) {
     doc.setFont("helvetica", "bold");
     doc.setFontSize(11);
     doc.setTextColor(...NAVY);
-    doc.text("What Presents Well", M, y);
-    y += 8;
+    doc.text(title, x, y);
 
-    for (const finding of positives) {
-      const continuation = ensureRoomContinuation(
-        doc,
-        page,
-        y,
-        24,
-        roomName,
-      );
-      page = continuation.page;
-      y = continuation.y;
+    let itemY = y + 8;
+    for (const item of items) {
+      if (itemY > PAGE_H - 35) break;
 
-      doc.setDrawColor(...BORDER);
-      doc.roundedRect(M, y, PAGE_W - M * 2, 21, 3, 3, "S");
+      doc.setFillColor(...accent);
+      doc.circle(x + 2.2, itemY + 1.8, 1.5, "F");
 
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(6.5);
-      doc.setTextColor(...GOLD);
-      doc.text("POSITIVE", M + 4, y + 5);
-
-      doc.setFontSize(8.5);
+      doc.setFontSize(7.6);
       doc.setTextColor(...NAVY);
-      doc.text(finding.label, M + 4, y + 10.5);
+      const titleWidth = item.impact ? columnW - 18 : columnW - 7;
+      const titleLines = doc.splitTextToSize(item.title, titleWidth).slice(0, 2);
+      doc.text(titleLines, x + 6, itemY + 3);
 
-      subtext(
-        doc,
-        finding.evidence,
-        M + 4,
-        y + 15,
-        PAGE_W - M * 2 - 8,
-        6.8,
-      );
+      if (item.impact) {
+        doc.setFontSize(6.5);
+        doc.setTextColor(...GOLD);
+        doc.text(`+${item.impact}`, x + columnW, itemY + 3, { align: "right" });
+      }
 
-      y += 24;
+      const titleHeight = titleLines.length * 3.5;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(6.4);
+      doc.setTextColor(...MUTED);
+      const detailLines = doc.splitTextToSize(item.detail, columnW - 6).slice(0, 3);
+      doc.text(detailLines, x + 6, itemY + titleHeight + 3.2);
+
+      const detailHeight = detailLines.length * 3.1;
+      itemY += Math.max(17, titleHeight + detailHeight + 6);
     }
   }
 
-  if (fixes.length) {
-    const continuation = ensureRoomContinuation(
-      doc,
-      page,
-      y + 3,
-      30,
-      roomName,
-    );
-    page = continuation.page;
-    y = continuation.y + 3;
+  drawCompactList(
+    "What Presents Well",
+    positives.map((finding) => ({
+      title: finding.label,
+      detail: finding.evidence,
+    })),
+    leftX,
+    sectionY,
+    [212, 165, 116],
+  );
 
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(11);
-    doc.setTextColor(...NAVY);
-    doc.text("Opportunities to Raise This Score", M, y);
-    y += 8;
-
-    for (const rec of fixes) {
-      const next = ensureRoomContinuation(
-        doc,
-        page,
-        y,
-        26,
-        roomName,
-      );
-      page = next.page;
-      y = next.y;
-
-      doc.setDrawColor(...BORDER);
-      doc.roundedRect(M, y, PAGE_W - M * 2, 23, 3, 3, "S");
-
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(8.3);
-      doc.setTextColor(...NAVY);
-      doc.text(rec.title, M + 4, y + 7);
-
-      doc.setFillColor(255, 244, 205);
-      doc.roundedRect(PAGE_W - M - 30, y + 3.5, 25, 7.5, 4, 4, "F");
-      doc.setFontSize(6.5);
-      doc.setTextColor(159, 91, 0);
-      doc.text(
-        `+${rec.scoreImpact} potential`,
-        PAGE_W - M - 17.5,
-        y + 8.7,
-        { align: "center" },
-      );
-
-      subtext(
-        doc,
-        rec.reason,
-        M + 4,
-        y + 13.5,
-        PAGE_W - M * 2 - 42,
-        6.8,
-      );
-
-      y += 26;
-    }
-  }
+  drawCompactList(
+    "Opportunities",
+    fixes.map((rec) => ({
+      title: rec.title,
+      detail: rec.reason,
+      impact: rec.scoreImpact,
+    })),
+    rightX,
+    sectionY,
+    [8, 23, 54],
+  );
 
   drawFooter(doc, page);
   return page;
