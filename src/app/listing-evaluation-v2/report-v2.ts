@@ -206,7 +206,7 @@ function drawFooter(doc: jsPDF, page: number) {
   doc.setFont("helvetica", "normal");
   doc.setFontSize(7);
   doc.setTextColor(...MUTED);
-  doc.text("REALTY EDGE PRO • LISTING READINESS EVALUATION", M, PAGE_H - 8);
+  doc.text("REALTY EDGE PRO • LISTING AI REPORT", M, PAGE_H - 8);
   doc.text(String(page), PAGE_W - M, PAGE_H - 8, { align: "right" });
 }
 
@@ -762,5 +762,5 @@ export function createListingEvaluationV2Pdf(input: ReportInput) {
 export function downloadListingEvaluationV2Pdf(input: ReportInput) {
   const doc = createListingEvaluationV2Pdf(input);
   const address = input.evaluation.property.address || "listing-evaluation";
-  doc.save(`${safeFilename(address)}-listing-readiness-evaluation.pdf`);
+  doc.save(`${safeFilename(address)}-listing-ai-dashboard-report.pdf`);
 }
