@@ -433,50 +433,57 @@ function drawRoomSection(
   const photo = photoForSpace(evaluation, space.id);
   const positives = analysis.visibleFindings
     .filter((finding) => finding.kind === "positive")
-    .slice(0, 5);
+    .slice(0, 4);
   const fixes = evaluation.recommendations
     .filter(
       (recommendation) =>
         recommendation.spaceId === analysis.spaceId && recommendation.selected,
     )
     .sort((a, b) => b.scoreImpact - a.scoreImpact)
-    .slice(0, 5);
+    .slice(0, 3);
 
-  // One room = one clean page. No continuation pages.
-  doc.setFillColor(255, 255, 255);
+  // Match the Listing AI dashboard visual language exactly.
+  doc.setFillColor(249, 247, 242);
   doc.rect(0, 0, PAGE_W, PAGE_H, "F");
 
-  heading(doc, roomName, 20, 21);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(7);
-  doc.setTextColor(...MUTED);
-  doc.text("INDIVIDUAL SPACE EVALUATION", M, 28);
+  const pageX = 13;
+  const contentW = PAGE_W - pageX * 2;
 
-  // One representative photo sits directly below the room name.
-  const photoY = 35;
-  const photoH = 76;
+  doc.setFont("times", "bold");
+  doc.setFontSize(22);
+  doc.setTextColor(...NAVY);
+  doc.text(roomName, pageX, 18);
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(6.8);
+  doc.setTextColor(123, 127, 134);
+  doc.text("INDIVIDUAL SPACE EVALUATION", pageX, 25);
+
+  const photoY = 31;
+  const photoH = 60;
+  doc.setFillColor(241, 236, 228);
+  doc.roundedRect(pageX, photoY, contentW, photoH, 3, 3, "F");
+
   if (photo?.dataUrl) {
     try {
       const props = doc.getImageProperties(photo.dataUrl);
-      const frameW = PAGE_W - M * 2;
       const ratio = props.width / props.height;
-      const frameRatio = frameW / photoH;
-      let drawW = frameW;
+      const frameRatio = contentW / photoH;
+      let drawW = contentW;
       let drawH = photoH;
-      let drawX = M;
+      let drawX = pageX;
       let drawY = photoY;
 
-      // Preserve aspect ratio and center-crop to the wide photo frame.
       if (ratio > frameRatio) {
         drawW = photoH * ratio;
-        drawX = M - (drawW - frameW) / 2;
+        drawX = pageX - (drawW - contentW) / 2;
       } else {
-        drawH = frameW / ratio;
+        drawH = contentW / ratio;
         drawY = photoY - (drawH - photoH) / 2;
       }
 
       doc.saveGraphicsState();
-      doc.rect(M, photoY, frameW, photoH);
+      doc.roundedRect(pageX, photoY, contentW, photoH, 3, 3);
       doc.clip();
       doc.discardPath();
       doc.addImage(
@@ -490,94 +497,141 @@ function drawRoomSection(
         "FAST",
       );
       doc.restoreGraphicsState();
-    } catch {
-      doc.setFillColor(...LIGHT);
-      doc.roundedRect(M, photoY, PAGE_W - M * 2, photoH, 3, 3, "F");
-    }
-  } else {
-    doc.setFillColor(...LIGHT);
-    doc.roundedRect(M, photoY, PAGE_W - M * 2, photoH, 3, 3, "F");
+    } catch {}
   }
 
-  const scoreY = 119;
-  const gap = 5;
-  const scoreW = (PAGE_W - M * 2 - gap * 2) / 3;
-  scoreCard(doc, M, scoreY, scoreW, "Current", analysis.currentScore);
-  scoreCard(doc, M + scoreW + gap, scoreY, scoreW, "Potential", analysis.potentialScore);
-  scoreCard(doc, M + (scoreW + gap) * 2, scoreY, scoreW, "Confidence", analysis.confidence);
+  const scoreY = 96;
+  const scoreGap = 4;
+  const scoreW = (contentW - scoreGap * 2) / 3;
 
-  const sectionY = 153;
-  const columnGap = 9;
-  const columnW = (PAGE_W - M * 2 - columnGap) / 2;
-  const leftX = M;
-  const rightX = M + columnW + columnGap;
+  function dashboardScoreCard(x: number, label: string, value: string | number) {
+    doc.setFillColor(241, 236, 228);
+    doc.roundedRect(x, scoreY, scoreW, 26, 3, 3, "F");
 
-  function drawCompactList(
-    title: string,
-    items: Array<{ title: string; detail: string; impact?: number }>,
-    x: number,
-    y: number,
-    accent: PdfColor,
-  ) {
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(11);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7);
+    doc.setTextColor(123, 127, 134);
+    doc.text(label.toUpperCase(), x + 4, scoreY + 7);
+
+    doc.setFont("times", "bold");
+    doc.setFontSize(18);
     doc.setTextColor(...NAVY);
-    doc.text(title, x, y);
-
-    let itemY = y + 8;
-    for (const item of items) {
-      if (itemY > PAGE_H - 35) break;
-
-      doc.setFillColor(...accent);
-      doc.circle(x + 2.2, itemY + 1.8, 1.5, "F");
-
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(7.6);
-      doc.setTextColor(...NAVY);
-      const titleWidth = item.impact ? columnW - 18 : columnW - 7;
-      const titleLines = doc.splitTextToSize(item.title, titleWidth).slice(0, 2);
-      doc.text(titleLines, x + 6, itemY + 3);
-
-      if (item.impact) {
-        doc.setFontSize(6.5);
-        doc.setTextColor(...GOLD);
-        doc.text(`+${item.impact}`, x + columnW, itemY + 3, { align: "right" });
-      }
-
-      const titleHeight = titleLines.length * 3.5;
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(6.4);
-      doc.setTextColor(...MUTED);
-      const detailLines = doc.splitTextToSize(item.detail, columnW - 6).slice(0, 3);
-      doc.text(detailLines, x + 6, itemY + titleHeight + 3.2);
-
-      const detailHeight = detailLines.length * 3.1;
-      itemY += Math.max(17, titleHeight + detailHeight + 6);
-    }
+    doc.text(String(value), x + 4, scoreY + 19);
   }
 
-  drawCompactList(
-    "What Presents Well",
-    positives.map((finding) => ({
-      title: finding.label,
-      detail: finding.evidence,
-    })),
-    leftX,
-    sectionY,
-    [212, 165, 116],
+  dashboardScoreCard(pageX, "Current score", analysis.currentScore);
+  dashboardScoreCard(pageX + scoreW + scoreGap, "Potential score", analysis.potentialScore);
+  dashboardScoreCard(
+    pageX + (scoreW + scoreGap) * 2,
+    "Confidence",
+    analysis.confidence.charAt(0).toUpperCase() + analysis.confidence.slice(1),
   );
 
-  drawCompactList(
-    "Opportunities",
-    fixes.map((rec) => ({
-      title: rec.title,
-      detail: rec.reason,
-      impact: rec.scoreImpact,
-    })),
-    rightX,
-    sectionY,
-    [8, 23, 54],
-  );
+  let y = 135;
+
+  doc.setFont("times", "bold");
+  doc.setFontSize(13);
+  doc.setTextColor(...NAVY);
+  doc.text("What Presents Well", pageX, y);
+  y += 7;
+
+  const positiveGap = 3;
+  const positiveW = (contentW - positiveGap) / 2;
+  const positiveH = 31;
+
+  positives.forEach((finding, index) => {
+    const col = index % 2;
+    const row = Math.floor(index / 2);
+    const x = pageX + col * (positiveW + positiveGap);
+    const cardY = y + row * (positiveH + 3);
+
+    doc.setFillColor(249, 247, 242);
+    doc.setDrawColor(8, 23, 54);
+    doc.setLineWidth(0.25);
+    doc.roundedRect(x, cardY, positiveW, positiveH, 3, 3, "FD");
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(6.6);
+    doc.setTextColor(154, 113, 0);
+    doc.text("POSITIVE", x + 4, cardY + 7);
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8.2);
+    doc.setTextColor(...NAVY);
+    const titleLines = doc.splitTextToSize(finding.label, positiveW - 8).slice(0, 2);
+    doc.text(titleLines, x + 4, cardY + 14);
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(6.7);
+    doc.setTextColor(109, 112, 119);
+    const titleHeight = titleLines.length * 3.6;
+    const evidenceLines = doc
+      .splitTextToSize(finding.evidence, positiveW - 8)
+      .slice(0, 3);
+    doc.text(evidenceLines, x + 4, cardY + 14 + titleHeight + 3);
+  });
+
+  const positiveRows = Math.ceil(positives.length / 2);
+  y += positiveRows * (positiveH + 3) + 5;
+
+  doc.setFont("times", "bold");
+  doc.setFontSize(13);
+  doc.setTextColor(...NAVY);
+  doc.text("Opportunities to Raise This Score", pageX, y);
+  y += 7;
+
+  const opportunityH = 24;
+
+  fixes.forEach((rec) => {
+    doc.setFillColor(249, 247, 242);
+    doc.setDrawColor(8, 23, 54);
+    doc.setLineWidth(0.25);
+    doc.roundedRect(pageX, y, contentW, opportunityH, 3, 3, "FD");
+
+    // Dashboard-style selected checkbox.
+    doc.setFillColor(13, 110, 253);
+    doc.roundedRect(pageX + 4, y + 8.2, 3.5, 3.5, 0.5, 0.5, "F");
+    doc.setDrawColor(255, 255, 255);
+    doc.setLineWidth(0.45);
+    doc.line(pageX + 4.7, y + 10, pageX + 5.5, y + 10.8);
+    doc.line(pageX + 5.5, y + 10.8, pageX + 6.9, y + 9.1);
+
+    const textX = pageX + 10;
+    const pillW = 26;
+    const pillX = pageX + contentW - pillW - 4;
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8.2);
+    doc.setTextColor(...NAVY);
+    const titleLines = doc.splitTextToSize(rec.title, contentW - 49).slice(0, 1);
+    doc.text(titleLines, textX, y + 8);
+
+    doc.setFillColor(245, 233, 197);
+    doc.roundedRect(pillX, y + 4.5, pillW, 7, 3.5, 3.5, "F");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(6.4);
+    doc.setTextColor(122, 88, 0);
+    doc.text(`+${rec.scoreImpact} potential`, pillX + pillW / 2, y + 9.2, {
+      align: "center",
+    });
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(6.7);
+    doc.setTextColor(109, 112, 119);
+    const reasonLines = doc.splitTextToSize(rec.reason, contentW - 20).slice(0, 2);
+    doc.text(reasonLines, textX, y + 14);
+
+    if (rec.evidence) {
+      doc.setFontSize(5.9);
+      doc.setTextColor(123, 127, 134);
+      const evidenceLines = doc
+        .splitTextToSize(`Visible evidence: ${rec.evidence}`, contentW - 20)
+        .slice(0, 1);
+      doc.text(evidenceLines, textX, y + 20.5);
+    }
+
+    y += opportunityH + 3;
+  });
 
   drawFooter(doc, page);
   return page;
