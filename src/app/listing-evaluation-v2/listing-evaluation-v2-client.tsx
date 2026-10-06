@@ -142,6 +142,8 @@ export default function ListingEvaluationV2Client() {
   const [analysisError, setAnalysisError] = useState("");
   const [draftHydrated, setDraftHydrated] = useState(false);
   const [draftMessage, setDraftMessage] = useState("");
+  const [generatingReport, setGeneratingReport] = useState(false);
+  const [reportError, setReportError] = useState("");
   const [agent, setAgent] = useState({
     name: "",
     brokerage: "",
@@ -485,41 +487,65 @@ export default function ListingEvaluationV2Client() {
   }
 
   async function generateAndSaveReport() {
-    const now = new Date().toISOString();
-    const profile = loadRepToolsProfile();
-    const finalEvaluation: ListingEvaluationV2 = {
-      ...evaluation,
-      id: `listing-ai-${Date.now()}`,
-      currentScore: propertyScores.currentScore,
-      potentialScore: propertyScores.potentialScore,
-      confidence: propertyScores.confidence,
-      createdAt: now,
-      updatedAt: now,
-    };
+    if (generatingReport) return;
 
-    const reportAgent = {
-      name: profile.fullName || agent.name || "Your Real Estate Professional",
-      brokerage: profile.brokerageName || agent.brokerage || "Realty Edge Pro",
-      phone: profile.phone || agent.phone,
-      email: profile.email || agent.email,
-      headshotDataUrl: profile.headshotDataUrl || undefined,
-    };
+    setGeneratingReport(true);
+    setReportError("");
+    setDraftMessage("Generating your Listing AI report...");
 
     try {
-      await saveListingAiReport({
-        id: finalEvaluation.id,
+      // Let React paint the clicked/loading state before the synchronous PDF work begins.
+      await new Promise<void>((resolve) =>
+        window.requestAnimationFrame(() => resolve()),
+      );
+
+      const now = new Date().toISOString();
+      const profile = loadRepToolsProfile();
+      const finalEvaluation: ListingEvaluationV2 = {
+        ...evaluation,
+        id: `listing-ai-${Date.now()}`,
+        currentScore: propertyScores.currentScore,
+        potentialScore: propertyScores.potentialScore,
+        confidence: propertyScores.confidence,
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      const reportAgent = {
+        name: profile.fullName || agent.name || "Your Real Estate Professional",
+        brokerage: profile.brokerageName || agent.brokerage || "Realty Edge Pro",
+        phone: profile.phone || agent.phone,
+        email: profile.email || agent.email,
+        headshotDataUrl: profile.headshotDataUrl || undefined,
+      };
+
+      try {
+        await saveListingAiReport({
+          id: finalEvaluation.id,
+          evaluation: finalEvaluation,
+          agent: reportAgent,
+        });
+        setDraftMessage("Listing AI report saved. Download is starting...");
+      } catch {
+        setDraftMessage("Download is starting. This browser could not save the report.");
+      }
+
+      downloadListingEvaluationV2Pdf({
         evaluation: finalEvaluation,
         agent: reportAgent,
       });
-      setDraftMessage("Listing AI report saved to Listing AI Reports.");
-    } catch {
-      setDraftMessage("The PDF will download, but this browser could not save the report.");
-    }
 
-    downloadListingEvaluationV2Pdf({
-      evaluation: finalEvaluation,
-      agent: reportAgent,
-    });
+      setDraftMessage("Listing AI report generated successfully.");
+    } catch (error) {
+      setReportError(
+        error instanceof Error
+          ? error.message
+          : "The report could not be generated. Please try again.",
+      );
+      setDraftMessage("");
+    } finally {
+      window.setTimeout(() => setGeneratingReport(false), 450);
+    }
   }
 
   return (
@@ -831,12 +857,26 @@ export default function ListingEvaluationV2Client() {
               </p>
               {draftMessage ? <p className="mt-2 text-xs font-medium text-emerald-700">{draftMessage}</p> : null}
               <button
-                className="mt-6 rounded-xl bg-[#082442] px-5 py-3 font-semibold text-[#D4A017] disabled:opacity-40"
-                disabled={!dynamicAnalyses.length}
+                className={`mt-6 inline-flex min-w-[220px] items-center justify-center gap-2 rounded-xl px-5 py-3 font-semibold shadow-sm transition-all duration-150 ${generatingReport ? "cursor-wait bg-[#D4A017] text-[#082442] scale-[0.98]" : "cursor-pointer bg-[#082442] text-[#D4A017] hover:bg-[#04182D] active:scale-[0.98]"} disabled:cursor-not-allowed disabled:opacity-40`}
+                disabled={!dynamicAnalyses.length || generatingReport}
                 onClick={() => void generateAndSaveReport()}
+                aria-busy={generatingReport}
               >
-                Generate seller report
+                {generatingReport ? (
+                  <>
+                    <span
+                      aria-hidden="true"
+                      className="h-4 w-4 animate-spin rounded-full border-2 border-[#082442]/30 border-t-[#082442]"
+                    />
+                    Generating Report...
+                  </>
+                ) : (
+                  "Generate seller report"
+                )}
               </button>
+              {reportError ? (
+                <p className="mt-3 text-sm font-semibold text-red-700">{reportError}</p>
+              ) : null}
               {!dynamicAnalyses.length ? (
                 <p className="mt-2 text-sm font-medium text-[#9A7100]">
                   Analyze at least one room or property area before generating the seller report.
