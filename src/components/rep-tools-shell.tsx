@@ -42,23 +42,23 @@ const nav = [
 
 function Sidebar({ activeLabel, close }: { activeLabel?: string; close?: () => void }) {
   return (
-    <aside className="flex h-full w-[252px] min-w-[252px] flex-col border-r border-[#D8CFC2] bg-[#F4F0E8] text-[#1E2430]">
-      <Link href="/tools-dashboard" className="flex min-h-[94px] items-center border-b border-[#D8CFC2] px-6 no-underline">
+    <aside className="flex h-full w-[252px] min-w-[252px] flex-col border-r border-[#18314F] bg-[#0B1F3A] text-[#F4F0E8]">
+      <Link href="/tools-dashboard" className="flex min-h-[94px] items-center border-b border-[#18314F] px-6 no-underline">
         <img src="/rep-tools-logo.svg" alt="Realty Edge Pro" className="h-auto w-[190px] max-w-full" />
       </Link>
       <nav className="flex-1 px-4 py-6">
         {nav.map((item) => {
           const active = item.label === activeLabel;
-          const className = `mb-2 flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-[14px] font-semibold transition ${active ? "bg-[#0B1F3A] text-[#C6A15B] shadow-sm" : item.href ? "text-[#3B424D] hover:bg-white hover:text-[#0B1F3A]" : "cursor-default text-[#6F6A63]"}`;
+          const className = `mb-2 flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-[14px] font-semibold transition ${active ? "bg-[#C6A15B] text-[#0B1F3A] shadow-[0_8px_20px_rgba(0,0,0,0.16)]" : item.href ? "text-[#F4F0E8] hover:bg-[#132A49] hover:text-[#C6A15B]" : "cursor-default text-[#8F9AAA]"}`;
           if (!item.href) {
             return <div key={item.label} className={className} aria-disabled="true"><span>{item.icon}</span><span>{item.label}</span></div>;
           }
           return <Link key={item.label} href={item.href} onClick={close} className={className + " no-underline"}><span>{item.icon}</span><span>{item.label}</span></Link>;
         })}
       </nav>
-      <div className="border-t border-[#D8CFC2] px-6 py-5">
-        <p className="font-serif text-sm font-bold text-[#0B1F3A]">REALTY EDGE TOOLS</p>
-        <p className="mt-1 text-[11px] uppercase tracking-[0.14em] text-[#8A7F72]">CMA + Listing Intelligence</p>
+      <div className="border-t border-[#18314F] px-6 py-5">
+        <p className="font-serif text-sm font-bold text-[#F4F0E8]">REALTY EDGE TOOLS</p>
+        <p className="mt-1 text-[11px] uppercase tracking-[0.14em] text-[#C6A15B]">CMA + Listing Intelligence</p>
       </div>
       {close ? <button type="button" aria-label="Close menu" onClick={close} className="absolute right-3 top-3 rounded-lg bg-[#0B1F3A] p-2 text-[#C6A15B]"><CloseIcon /></button> : null}
     </aside>
