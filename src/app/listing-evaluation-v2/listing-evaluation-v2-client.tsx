@@ -605,10 +605,10 @@ export default function ListingEvaluationV2Client() {
   }
 
   return (
-    <main className="min-h-screen bg-[#F4F0E8] px-4 py-8 text-[#17202B] sm:px-6 lg:px-8">
+    <main className="min-h-screen bg-[#F4F0E8] px-4 py-8 text-[#0B1F3A] sm:px-6 lg:px-8">
       <div className="mx-auto max-w-7xl space-y-6">
         <header>
-          <p className="text-sm font-semibold uppercase tracking-[0.2em] text-[#A88445]">
+          <p className="text-sm font-semibold uppercase tracking-[0.2em] text-[#B08A47]">
             Realty Edge Pro
           </p>
           <h1 className="mt-2 font-serif text-3xl font-semibold text-[#0B1F3A]">Listing AI</h1>
@@ -620,28 +620,28 @@ export default function ListingEvaluationV2Client() {
 
         {spaces.length === 0 ? (
           <div className="space-y-6">
-            <section className="rounded-2xl border border-[#D8CFC2] bg-[#FBF8F3] p-6 shadow-[0_10px_30px_rgba(46,42,35,0.05)]">
+            <section className="rounded-2xl border border-[#D6CCBE] bg-[#FFFDF8] p-6 shadow-[0_14px_36px_rgba(11,31,58,0.08)]">
               <h2 className="font-serif text-2xl font-semibold text-[#0B1F3A]">1. Property information</h2>
               <p className="mt-1 text-sm text-[#6F6A63]">
                 Realty Edge Pro can prefill this later. Every field remains editable before the seller report is generated.
               </p>
               <div className="mt-5 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-                <input className="rounded-xl border border-[#D8CFC2] bg-[#FBF8F3] px-4 py-3 outline-none focus:border-[#0B1F3A] focus:ring-2 focus:ring-[#0B1F3A]/10" placeholder="Property address" value={property.address} onChange={(event) => setProperty((current) => ({ ...current, address: event.target.value }))} />
-                <input className="rounded-xl border border-[#D8CFC2] bg-[#FBF8F3] px-4 py-3 outline-none focus:border-[#0B1F3A] focus:ring-2 focus:ring-[#0B1F3A]/10" placeholder="City, State ZIP" value={property.cityStateZip} onChange={(event) => setProperty((current) => ({ ...current, cityStateZip: event.target.value }))} />
-                <input className="rounded-xl border border-[#D8CFC2] bg-[#FBF8F3] px-4 py-3 outline-none focus:border-[#0B1F3A] focus:ring-2 focus:ring-[#0B1F3A]/10" placeholder="Homeowner name" value={property.homeownerName} onChange={(event) => setProperty((current) => ({ ...current, homeownerName: event.target.value }))} />
-                <input className="rounded-xl border border-[#D8CFC2] bg-[#FBF8F3] px-4 py-3 outline-none focus:border-[#0B1F3A] focus:ring-2 focus:ring-[#0B1F3A]/10" placeholder="Property type" value={property.propertyType} onChange={(event) => setProperty((current) => ({ ...current, propertyType: event.target.value }))} />
-                <input className="rounded-xl border border-[#D8CFC2] bg-[#FBF8F3] px-4 py-3 outline-none focus:border-[#0B1F3A] focus:ring-2 focus:ring-[#0B1F3A]/10" type="number" placeholder="Beds" value={property.beds || ""} onChange={(event) => {
+                <input className="rounded-xl border border-[#D6CCBE] bg-[#FFFDF8] px-4 py-3 outline-none focus:border-[#0B1F3A] focus:ring-2 focus:ring-[#0B1F3A]/10" placeholder="Property address" value={property.address} onChange={(event) => setProperty((current) => ({ ...current, address: event.target.value }))} />
+                <input className="rounded-xl border border-[#D6CCBE] bg-[#FFFDF8] px-4 py-3 outline-none focus:border-[#0B1F3A] focus:ring-2 focus:ring-[#0B1F3A]/10" placeholder="City, State ZIP" value={property.cityStateZip} onChange={(event) => setProperty((current) => ({ ...current, cityStateZip: event.target.value }))} />
+                <input className="rounded-xl border border-[#D6CCBE] bg-[#FFFDF8] px-4 py-3 outline-none focus:border-[#0B1F3A] focus:ring-2 focus:ring-[#0B1F3A]/10" placeholder="Homeowner name" value={property.homeownerName} onChange={(event) => setProperty((current) => ({ ...current, homeownerName: event.target.value }))} />
+                <input className="rounded-xl border border-[#D6CCBE] bg-[#FFFDF8] px-4 py-3 outline-none focus:border-[#0B1F3A] focus:ring-2 focus:ring-[#0B1F3A]/10" placeholder="Property type" value={property.propertyType} onChange={(event) => setProperty((current) => ({ ...current, propertyType: event.target.value }))} />
+                <input className="rounded-xl border border-[#D6CCBE] bg-[#FFFDF8] px-4 py-3 outline-none focus:border-[#0B1F3A] focus:ring-2 focus:ring-[#0B1F3A]/10" type="number" placeholder="Beds" value={property.beds || ""} onChange={(event) => {
                   const beds = numberValue(event.target.value);
                   setProperty((current) => ({ ...current, beds }));
                   setCounts((current) => ({ ...current, bedroom: beds }));
                 }} />
-                <input className="rounded-xl border border-[#D8CFC2] bg-[#FBF8F3] px-4 py-3 outline-none focus:border-[#0B1F3A] focus:ring-2 focus:ring-[#0B1F3A]/10" type="number" step="0.5" placeholder="Baths" value={property.baths || ""} onChange={(event) => setProperty((current) => ({ ...current, baths: Number(event.target.value) || 0 }))} />
-                <input className="rounded-xl border border-[#D8CFC2] bg-[#FBF8F3] px-4 py-3 outline-none focus:border-[#0B1F3A] focus:ring-2 focus:ring-[#0B1F3A]/10" type="number" placeholder="Square feet" value={property.sqft || ""} onChange={(event) => setProperty((current) => ({ ...current, sqft: Number(event.target.value) || 0 }))} />
-                <input className="rounded-xl border border-[#D8CFC2] bg-[#FBF8F3] px-4 py-3 outline-none focus:border-[#0B1F3A] focus:ring-2 focus:ring-[#0B1F3A]/10" type="number" placeholder="Year built" value={property.yearBuilt || ""} onChange={(event) => setProperty((current) => ({ ...current, yearBuilt: Number(event.target.value) || 0 }))} />
+                <input className="rounded-xl border border-[#D6CCBE] bg-[#FFFDF8] px-4 py-3 outline-none focus:border-[#0B1F3A] focus:ring-2 focus:ring-[#0B1F3A]/10" type="number" step="0.5" placeholder="Baths" value={property.baths || ""} onChange={(event) => setProperty((current) => ({ ...current, baths: Number(event.target.value) || 0 }))} />
+                <input className="rounded-xl border border-[#D6CCBE] bg-[#FFFDF8] px-4 py-3 outline-none focus:border-[#0B1F3A] focus:ring-2 focus:ring-[#0B1F3A]/10" type="number" placeholder="Square feet" value={property.sqft || ""} onChange={(event) => setProperty((current) => ({ ...current, sqft: Number(event.target.value) || 0 }))} />
+                <input className="rounded-xl border border-[#D6CCBE] bg-[#FFFDF8] px-4 py-3 outline-none focus:border-[#0B1F3A] focus:ring-2 focus:ring-[#0B1F3A]/10" type="number" placeholder="Year built" value={property.yearBuilt || ""} onChange={(event) => setProperty((current) => ({ ...current, yearBuilt: Number(event.target.value) || 0 }))} />
               </div>
             </section>
 
-            <section className="rounded-2xl border border-[#D8CFC2] bg-[#FBF8F3] p-6 shadow-[0_10px_30px_rgba(46,42,35,0.05)]">
+            <section className="rounded-2xl border border-[#D6CCBE] bg-[#FFFDF8] p-6 shadow-[0_14px_36px_rgba(11,31,58,0.08)]">
               <h2 className="font-serif text-2xl font-semibold text-[#0B1F3A]">2. Property cover photo</h2>
               <p className="mt-1 text-sm text-[#6F6A63]">
                 Upload the home's front exterior or street-view image for the cover. This photo stays separate
@@ -656,7 +656,7 @@ export default function ListingEvaluationV2Client() {
                   </div>
                 )}
                 <div className="space-y-3">
-                  <label className="inline-flex cursor-pointer rounded-xl bg-[#0B1F3A] px-5 py-3 font-semibold text-[#C6A15B]">
+                  <label className="inline-flex cursor-pointer rounded-xl bg-[#0B1F3A] px-5 py-3 font-semibold text-[#F4F0E8] shadow-sm hover:bg-[#08172C]">
                     {coverFrontPhoto ? "Replace cover photo" : "Upload front / street view"}
                     <input className="hidden" type="file" accept="image/jpeg,image/png,image/webp" onChange={uploadFrontCover} />
                   </label>
@@ -673,7 +673,7 @@ export default function ListingEvaluationV2Client() {
               </div>
             </section>
 
-            <section className="rounded-2xl border border-[#D8CFC2] bg-[#FBF8F3] p-6 shadow-[0_10px_30px_rgba(46,42,35,0.05)]">
+            <section className="rounded-2xl border border-[#D6CCBE] bg-[#FFFDF8] p-6 shadow-[0_14px_36px_rgba(11,31,58,0.08)]">
               <h2 className="font-serif text-2xl font-semibold text-[#0B1F3A]">3. Build the property</h2>
               <p className="mt-1 text-sm text-[#6F6A63]">
                 Add as many instances as the property actually has. Names can be changed later.
@@ -683,7 +683,7 @@ export default function ListingEvaluationV2Client() {
                   <label key={section.category} className="rounded-xl border p-4">
                     <span className="text-sm font-medium">{section.label}</span>
                     <input
-                      className="mt-2 w-full rounded-lg border border-[#D8CFC2] bg-[#FBF8F3] px-3 py-2 outline-none focus:border-[#0B1F3A] focus:ring-2 focus:ring-[#0B1F3A]/10"
+                      className="mt-2 w-full rounded-lg border border-[#D6CCBE] bg-[#FFFDF8] px-3 py-2 outline-none focus:border-[#0B1F3A] focus:ring-2 focus:ring-[#0B1F3A]/10"
                       min={0}
                       max={20}
                       type="number"
@@ -698,7 +698,7 @@ export default function ListingEvaluationV2Client() {
                   </label>
                 ))}
               </div>
-              <button className="mt-6 rounded-xl bg-[#0B1F3A] px-5 py-3 font-semibold text-[#C6A15B]" onClick={generateSpaces}>
+              <button className="mt-6 rounded-xl bg-[#0B1F3A] px-5 py-3 font-semibold text-[#F4F0E8] shadow-sm hover:bg-[#08172C]" onClick={generateSpaces}>
                 Create property sections
               </button>
             </section>
@@ -706,19 +706,19 @@ export default function ListingEvaluationV2Client() {
         ) : (
           <>
             <section className="grid gap-4 md:grid-cols-4">
-              <div className="rounded-2xl border border-[#D8CFC2] border-t-[3px] border-t-[#0B1F3A] bg-[#FBF8F3] p-5 shadow-[0_10px_30px_rgba(46,42,35,0.05)]">
+              <div className="rounded-2xl border border-[#D6CCBE] border-t-[3px] border-t-[#0B1F3A] bg-[#FFFDF8] p-5 shadow-[0_14px_36px_rgba(11,31,58,0.08)]">
                 <p className="text-xs font-bold uppercase text-[#6F6A63]">Overall current</p>
                 <p className="mt-2 font-serif text-3xl font-semibold text-[#0B1F3A]">{propertyScores.currentScore ?? "—"}</p>
               </div>
-              <div className="rounded-2xl border border-[#D8CFC2] border-t-[3px] border-t-[#0B1F3A] bg-[#FBF8F3] p-5 shadow-[0_10px_30px_rgba(46,42,35,0.05)]">
+              <div className="rounded-2xl border border-[#D6CCBE] border-t-[3px] border-t-[#0B1F3A] bg-[#FFFDF8] p-5 shadow-[0_14px_36px_rgba(11,31,58,0.08)]">
                 <p className="text-xs font-bold uppercase text-[#6F6A63]">Overall potential</p>
                 <p className="mt-2 font-serif text-3xl font-semibold text-[#0B1F3A]">{propertyScores.potentialScore ?? "—"}</p>
               </div>
-              <div className="rounded-2xl border border-[#D8CFC2] border-t-[3px] border-t-[#0B1F3A] bg-[#FBF8F3] p-5 shadow-[0_10px_30px_rgba(46,42,35,0.05)]">
+              <div className="rounded-2xl border border-[#D6CCBE] border-t-[3px] border-t-[#0B1F3A] bg-[#FFFDF8] p-5 shadow-[0_14px_36px_rgba(11,31,58,0.08)]">
                 <p className="text-xs font-bold uppercase text-[#6F6A63]">Confidence</p>
                 <p className="mt-2 font-serif text-3xl font-semibold capitalize text-[#0B1F3A]">{propertyScores.confidence}</p>
               </div>
-              <div className="rounded-2xl border border-[#D8CFC2] border-t-[3px] border-t-[#0B1F3A] bg-[#FBF8F3] p-5 shadow-[0_10px_30px_rgba(46,42,35,0.05)]">
+              <div className="rounded-2xl border border-[#D6CCBE] border-t-[3px] border-t-[#0B1F3A] bg-[#FFFDF8] p-5 shadow-[0_14px_36px_rgba(11,31,58,0.08)]">
                 <p className="text-xs font-bold uppercase text-[#6F6A63]">Areas complete</p>
                 <p className="mt-2 font-serif text-3xl font-semibold text-[#0B1F3A]">
                   {spaces.filter((space) => space.status === "complete").length}/{spaces.filter((space) => space.status !== "not_evaluated").length}
@@ -727,13 +727,13 @@ export default function ListingEvaluationV2Client() {
             </section>
 
             <div className="grid gap-6 lg:grid-cols-[340px_1fr]">
-              <aside className="rounded-2xl border border-[#D8CFC2] bg-[#FBF8F3] p-4 shadow-[0_10px_30px_rgba(46,42,35,0.05)]">
+              <aside className="rounded-2xl border border-[#D6CCBE] bg-[#FFFDF8] p-4 shadow-[0_14px_36px_rgba(11,31,58,0.08)]">
                 <div className="mb-4 flex items-center justify-between">
                   <div>
                     <h2 className="font-serif text-xl font-semibold text-[#0B1F3A]">Property sections</h2>
                     <p className="text-xs text-[#6F6A63]">{spaces.length} spaces</p>
                   </div>
-                  <button className="text-xs font-semibold text-[#A88445]" onClick={() => setSpaces([])}>
+                  <button className="text-xs font-semibold text-[#B08A47]" onClick={() => setSpaces([])}>
                     Edit setup
                   </button>
                 </div>
@@ -744,7 +744,7 @@ export default function ListingEvaluationV2Client() {
                       <section key={group.category}>
                         <div className="mb-2 flex items-center justify-between">
                           <h3 className="text-xs font-bold uppercase tracking-wide text-[#6F6A63]">{group.label}</h3>
-                          <button className="text-xs font-semibold text-[#A88445]" onClick={() => setSpaces((current) => addPropertySpace(current, group.category))}>
+                          <button className="text-xs font-semibold text-[#B08A47]" onClick={() => setSpaces((current) => addPropertySpace(current, group.category))}>
                             + Add
                           </button>
                         </div>
@@ -769,7 +769,7 @@ export default function ListingEvaluationV2Client() {
                 </div>
               </aside>
 
-              <section className="rounded-2xl border border-[#D8CFC2] bg-[#FBF8F3] p-6 shadow-[0_10px_30px_rgba(46,42,35,0.05)]">
+              <section className="rounded-2xl border border-[#D6CCBE] bg-[#FFFDF8] p-6 shadow-[0_14px_36px_rgba(11,31,58,0.08)]">
                 {activeSpace ? (
                   <>
                     <p className="text-xs font-semibold uppercase tracking-wide text-[#6F6A63]">Evaluate this space</p>
@@ -777,16 +777,16 @@ export default function ListingEvaluationV2Client() {
 
                     <label className="mt-5 block max-w-lg">
                       <span className="text-sm font-medium">Optional custom name</span>
-                      <input className="mt-2 w-full rounded-xl border border-[#D8CFC2] bg-[#FBF8F3] px-4 py-3 outline-none focus:border-[#0B1F3A] focus:ring-2 focus:ring-[#0B1F3A]/10" placeholder={activeSpace.defaultLabel} value={activeSpace.customLabel ?? ""} onChange={(event) => renameSpace(activeSpace.id, event.target.value)} />
+                      <input className="mt-2 w-full rounded-xl border border-[#D6CCBE] bg-[#FFFDF8] px-4 py-3 outline-none focus:border-[#0B1F3A] focus:ring-2 focus:ring-[#0B1F3A]/10" placeholder={activeSpace.defaultLabel} value={activeSpace.customLabel ?? ""} onChange={(event) => renameSpace(activeSpace.id, event.target.value)} />
                     </label>
 
-                    <div className="mt-6 rounded-2xl border-2 border-dashed border-[#D8CFC2] p-6">
+                    <div className="mt-6 rounded-2xl border-2 border-dashed border-[#D6CCBE] p-6">
                       <div className="text-center">
                         <h3 className="font-serif text-lg font-semibold text-[#0B1F3A]">Photos for {displaySpaceName(activeSpace)}</h3>
                         <p className="mt-2 text-sm text-[#6F6A63]">
                           These photos are isolated to this space and routed to the correct specialist AI.
                         </p>
-                        <label className="mt-5 inline-block cursor-pointer rounded-xl bg-[#0B1F3A] px-5 py-3 font-semibold text-[#C6A15B]">
+                        <label className="mt-5 inline-block cursor-pointer rounded-xl bg-[#0B1F3A] px-5 py-3 font-semibold text-[#F4F0E8] shadow-sm hover:bg-[#08172C]">
                           + Add photos
                           <input className="hidden" type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={(event) => addPhotos(event, activeSpace)} />
                         </label>
@@ -804,7 +804,7 @@ export default function ListingEvaluationV2Client() {
                       ) : null}
 
                       <div className="mt-5 flex flex-wrap justify-center gap-3">
-                        <button className="rounded-xl bg-[#0B1F3A] px-5 py-3 font-semibold text-[#C6A15B] disabled:opacity-40" disabled={!activePhotos.length || analyzingSpaceId === activeSpace.id} onClick={() => analyzeSpace(activeSpace)}>
+                        <button className="rounded-xl bg-[#0B1F3A] px-5 py-3 font-semibold text-[#F4F0E8] shadow-sm hover:bg-[#08172C] disabled:opacity-40" disabled={!activePhotos.length || analyzingSpaceId === activeSpace.id} onClick={() => analyzeSpace(activeSpace)}>
                           {analyzingSpaceId === activeSpace.id ? "Analyzing..." : activeAnalysis ? "Re-analyze space" : "Analyze space"}
                         </button>
                         <button className="px-4 py-3 text-sm font-medium text-[#6F6A63] underline" onClick={() => markNoPhotos(activeSpace.id)}>
@@ -836,7 +836,7 @@ export default function ListingEvaluationV2Client() {
                           <div className="mt-3 grid gap-3 md:grid-cols-2">
                             {activeAnalysis.visibleFindings.filter((finding) => finding.kind === "positive").map((finding) => (
                               <div key={finding.id} className="rounded-xl border p-4">
-                                <p className="text-xs font-bold uppercase text-[#A88445]">Positive</p>
+                                <p className="text-xs font-bold uppercase text-[#B08A47]">Positive</p>
                                 <p className="mt-1 font-semibold">{finding.label}</p>
                                 <p className="mt-2 text-sm text-[#6F6A63]">{finding.evidence}</p>
                               </div>
@@ -872,7 +872,7 @@ export default function ListingEvaluationV2Client() {
             </div>
 
             {prioritizedRecommendations.length > 0 ? (
-              <section className="rounded-2xl border border-[#D8CFC2] bg-[#FBF8F3] p-6 shadow-[0_10px_30px_rgba(46,42,35,0.05)]">
+              <section className="rounded-2xl border border-[#D6CCBE] bg-[#FFFDF8] p-6 shadow-[0_14px_36px_rgba(11,31,58,0.08)]">
                 <h2 className="font-serif text-2xl font-semibold text-[#0B1F3A]">Highest-impact preparation plan</h2>
                 <p className="mt-1 text-sm text-[#6F6A63]">
                   This is the default seller-facing order. Room views remain available above.
@@ -891,7 +891,7 @@ export default function ListingEvaluationV2Client() {
                               <div key={item.id} className="rounded-xl border p-4">
                                 <div className="flex items-center justify-between gap-3">
                                   <p className="font-semibold">{item.title}</p>
-                                  <span className="text-sm font-bold text-[#A88445]">+{item.scoreImpact}</span>
+                                  <span className="text-sm font-bold text-[#B08A47]">+{item.scoreImpact}</span>
                                 </div>
                                 <p className="mt-1 text-xs font-semibold uppercase text-[#6F6A63]">{space ? displaySpaceName(space) : "Property"}</p>
                                 <p className="mt-2 text-sm text-[#6F6A63]">{item.reason}</p>
@@ -906,7 +906,7 @@ export default function ListingEvaluationV2Client() {
               </section>
             ) : null}
 
-            <section className="rounded-2xl border border-[#D8CFC2] bg-[#FBF8F3] p-6 shadow-[0_10px_30px_rgba(46,42,35,0.05)]">
+            <section className="rounded-2xl border border-[#D6CCBE] bg-[#FFFDF8] p-6 shadow-[0_14px_36px_rgba(11,31,58,0.08)]">
               <h2 className="font-serif text-2xl font-semibold text-[#0B1F3A]">Generate seller report</h2>
               <p className="mt-1 text-sm text-[#6F6A63]">
                 Property details above will be used in the report. Agent name, headshot, brokerage, phone and email are pulled from the Profile page in this dashboard.
@@ -934,7 +934,7 @@ export default function ListingEvaluationV2Client() {
                 <p className="mt-3 text-sm font-semibold text-red-700">{reportError}</p>
               ) : null}
               {!dynamicAnalyses.length ? (
-                <p className="mt-2 text-sm font-medium text-[#A88445]">
+                <p className="mt-2 text-sm font-medium text-[#B08A47]">
                   Analyze at least one room or property area before generating the seller report.
                 </p>
               ) : null}
