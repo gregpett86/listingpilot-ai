@@ -44,7 +44,7 @@ function Sidebar({ activeLabel, close }: { activeLabel?: string; close?: () => v
   return (
     <aside className="flex h-full w-[252px] min-w-[252px] flex-col border-r border-[#18314F] bg-[#0B1F3A] text-[#F4F0E8]">
       <Link href="/tools-dashboard" className="flex min-h-[94px] items-center border-b border-[#18314F] px-6 no-underline">
-        <img src="/rep-tools-logo.svg" alt="Realty Edge Pro" className="h-auto w-[190px] max-w-full" />
+        <img src="/rep-tools-logo-uploaded.svg" alt="Realty Edge Pro" className="h-auto w-[190px] max-w-full" />
       </Link>
       <nav className="flex-1 px-4 py-6">
         {nav.map((item) => {
