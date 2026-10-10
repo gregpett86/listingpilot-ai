@@ -235,7 +235,7 @@ function drawCover(doc: jsPDF, input: ReportInput) {
   const titleBoxY = 10;
   const titleBoxW = PAGE_W - titleBoxX * 2;
   const titleBoxH = 85;
-  const agentBarH = 42;
+  const agentBarH = 34;
   const agentBarY = PAGE_H - agentBarH;
   const imageSize = 156;
   const imageX = (PAGE_W - imageSize) / 2;
@@ -297,7 +297,7 @@ function drawCover(doc: jsPDF, input: ReportInput) {
   });
   if (location) {
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(6.7);
+    doc.setFontSize(6.4);
     doc.text(location.toUpperCase(), titleBoxX + titleBoxW / 2, dividerY + 20, {
       align: "center",
       maxWidth: titleBoxW - 14,
@@ -310,8 +310,8 @@ function drawCover(doc: jsPDF, input: ReportInput) {
   doc.setFillColor(212, 165, 116);
   doc.rect(0, agentBarY, PAGE_W, 0.8, "F");
 
-  const avatarR = 14;
-  const avatarCX = 23;
+  const avatarR = 10.5;
+  const avatarCX = 24;
   const avatarCY = agentBarY + agentBarH / 2;
 
   doc.setFillColor(212, 165, 116);
@@ -320,13 +320,26 @@ function drawCover(doc: jsPDF, input: ReportInput) {
   doc.circle(avatarCX, avatarCY, avatarR + 0.5, "F");
 
   if (agent.headshotDataUrl) {
-    addCircularCoverImage(
-      doc,
-      agent.headshotDataUrl,
-      avatarCX,
-      avatarCY,
-      avatarR,
-    );
+    try {
+      doc.addImage(
+        agent.headshotDataUrl,
+        "PNG",
+        avatarCX - avatarR,
+        avatarCY - avatarR,
+        avatarR * 2,
+        avatarR * 2,
+        undefined,
+        "FAST",
+      );
+    } catch {
+      addCircularCoverImage(
+        doc,
+        agent.headshotDataUrl,
+        avatarCX,
+        avatarCY,
+        avatarR,
+      );
+    }
   } else {
     doc.setFillColor(27, 34, 56);
     doc.circle(avatarCX, avatarCY, avatarR, "F");
@@ -338,26 +351,41 @@ function drawCover(doc: jsPDF, input: ReportInput) {
     });
   }
 
-  const nameX = 42;
+  const nameX = 40;
   doc.setFont("times", "bold");
-  doc.setFontSize(11.5);
-  doc.setTextColor(26, 26, 26);
-  doc.text(agent.name || "Your Real Estate Professional", nameX, avatarCY - 2);
+  doc.setFontSize(10.2);
+  doc.setTextColor(...NAVY);
+  doc.text(
+    agent.name || "Your Real Estate Professional",
+    nameX,
+    avatarCY - 6,
+    { maxWidth: 94 },
+  );
 
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(6.5);
-  doc.setTextColor(102, 102, 102);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(6.2);
+  doc.setTextColor(109, 112, 119);
   doc.text(
     agent.brokerage ? agent.brokerage.toUpperCase() : "REALTOR®",
     nameX,
-    avatarCY + 5,
+    avatarCY - 0.5,
+    { maxWidth: 94 },
   );
 
-  // Official Realty Edge Pro logo on the report's beige agent strip.
-  // The source image is prepared on the same beige background so it blends cleanly.
-  const logoW = 48;
-  const logoH = 27.3;
-  const logoX = PAGE_W - M - logoW;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(6.4);
+  doc.setTextColor(70, 78, 90);
+  if (agent.phone) {
+    doc.text(agent.phone, nameX, avatarCY + 5, { maxWidth: 94 });
+  }
+  if (agent.email) {
+    doc.text(agent.email, nameX, avatarCY + 10, { maxWidth: 94 });
+  }
+
+  // Official Realty Edge Pro logo on the far right of the agent strip.
+  const logoW = 43;
+  const logoH = 24.5;
+  const logoX = PAGE_W - 14 - logoW;
   const logoY = agentBarY + (agentBarH - logoH) / 2;
   try {
     doc.addImage(
@@ -450,17 +478,17 @@ function drawRoomSection(
   const contentW = PAGE_W - pageX * 2;
 
   doc.setFont("times", "bold");
-  doc.setFontSize(22);
+  doc.setFontSize(18.5);
   doc.setTextColor(...NAVY);
-  doc.text(roomName, pageX, 18);
+  doc.text(roomName, pageX, 17.5);
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(6.8);
   doc.setTextColor(123, 127, 134);
-  doc.text("INDIVIDUAL SPACE EVALUATION", pageX, 25);
+  doc.text("INDIVIDUAL SPACE EVALUATION", pageX, 24);
 
-  const photoY = 31;
-  const photoH = 60;
+  const photoY = 29;
+  const photoH = 58;
   doc.setFillColor(241, 236, 228);
   doc.roundedRect(pageX, photoY, contentW, photoH, 3, 3, "F");
 
@@ -500,23 +528,23 @@ function drawRoomSection(
     } catch {}
   }
 
-  const scoreY = 96;
+  const scoreY = 92;
   const scoreGap = 4;
   const scoreW = (contentW - scoreGap * 2) / 3;
 
   function dashboardScoreCard(x: number, label: string, value: string | number) {
     doc.setFillColor(241, 236, 228);
-    doc.roundedRect(x, scoreY, scoreW, 26, 3, 3, "F");
+    doc.roundedRect(x, scoreY, scoreW, 25, 3, 3, "F");
 
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(7);
+    doc.setFontSize(6.2);
     doc.setTextColor(123, 127, 134);
-    doc.text(label.toUpperCase(), x + 4, scoreY + 7);
+    doc.text(label.toUpperCase(), x + 4.5, scoreY + 7);
 
     doc.setFont("times", "bold");
-    doc.setFontSize(18);
+    doc.setFontSize(16.5);
     doc.setTextColor(...NAVY);
-    doc.text(String(value), x + 4, scoreY + 19);
+    doc.text(String(value), x + 4.5, scoreY + 18.5);
   }
 
   dashboardScoreCard(pageX, "Current score", analysis.currentScore);
@@ -527,17 +555,17 @@ function drawRoomSection(
     analysis.confidence.charAt(0).toUpperCase() + analysis.confidence.slice(1),
   );
 
-  let y = 135;
+  let y = 127;
 
   doc.setFont("times", "bold");
-  doc.setFontSize(13);
+  doc.setFontSize(12.2);
   doc.setTextColor(...NAVY);
   doc.text("What Presents Well", pageX, y);
   y += 7;
 
   const positiveGap = 3;
   const positiveW = (contentW - positiveGap) / 2;
-  const positiveH = 31;
+  const positiveH = 29;
 
   positives.forEach((finding, index) => {
     const col = index % 2;
@@ -556,13 +584,13 @@ function drawRoomSection(
     doc.text("POSITIVE", x + 4, cardY + 7);
 
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(8.2);
+    doc.setFontSize(7.8);
     doc.setTextColor(...NAVY);
     const titleLines = doc.splitTextToSize(finding.label, positiveW - 8).slice(0, 2);
     doc.text(titleLines, x + 4, cardY + 14);
 
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(6.7);
+    doc.setFontSize(6.4);
     doc.setTextColor(109, 112, 119);
     const titleHeight = titleLines.length * 3.6;
     const evidenceLines = doc
@@ -580,7 +608,7 @@ function drawRoomSection(
   doc.text("Opportunities to Raise This Score", pageX, y);
   y += 7;
 
-  const opportunityH = 24;
+  const opportunityH = 23;
 
   fixes.forEach((rec) => {
     doc.setFillColor(249, 247, 242);
@@ -601,7 +629,7 @@ function drawRoomSection(
     const pillX = pageX + contentW - pillW - 4;
 
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(8.2);
+    doc.setFontSize(7.8);
     doc.setTextColor(...NAVY);
     const titleLines = doc.splitTextToSize(rec.title, contentW - 49).slice(0, 1);
     doc.text(titleLines, textX, y + 8);
