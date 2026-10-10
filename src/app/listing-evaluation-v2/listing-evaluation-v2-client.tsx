@@ -605,14 +605,14 @@ export default function ListingEvaluationV2Client() {
   }
 
   return (
-    <main className="min-h-screen bg-[#EEE9E0] px-4 py-8 text-[#17202B] sm:px-6 lg:px-8">
+    <main className="min-h-screen bg-[#F4F0E8] px-4 py-8 text-[#17202B] sm:px-6 lg:px-8">
       <div className="mx-auto max-w-7xl space-y-6">
         <header>
-          <p className="text-sm font-semibold uppercase tracking-[0.2em] text-[#9A7100]">
+          <p className="text-sm font-semibold uppercase tracking-[0.2em] text-[#A88445]">
             Realty Edge Pro
           </p>
-          <h1 className="mt-2 font-serif text-3xl font-semibold text-[#082442]">Listing AI</h1>
-          <p className="mt-2 max-w-3xl text-sm text-[#6D7077]">
+          <h1 className="mt-2 font-serif text-3xl font-semibold text-[#0B1F3A]">Listing AI</h1>
+          <p className="mt-2 max-w-3xl text-sm text-[#6F6A63]">
             Room-by-room photo analysis, deterministic scoring and prioritized
             seller preparation.
           </p>
@@ -620,30 +620,30 @@ export default function ListingEvaluationV2Client() {
 
         {spaces.length === 0 ? (
           <div className="space-y-6">
-            <section className="rounded-2xl border border-[#DDD7CE] bg-[#F9F7F2] p-6 shadow-[0_10px_30px_rgba(46,42,35,0.05)]">
-              <h2 className="font-serif text-2xl font-semibold text-[#082442]">1. Property information</h2>
-              <p className="mt-1 text-sm text-[#6D7077]">
+            <section className="rounded-2xl border border-[#D8CFC2] bg-[#FBF8F3] p-6 shadow-[0_10px_30px_rgba(46,42,35,0.05)]">
+              <h2 className="font-serif text-2xl font-semibold text-[#0B1F3A]">1. Property information</h2>
+              <p className="mt-1 text-sm text-[#6F6A63]">
                 Realty Edge Pro can prefill this later. Every field remains editable before the seller report is generated.
               </p>
               <div className="mt-5 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-                <input className="rounded-xl border border-[#D7D0C7] bg-[#FCFBF8] px-4 py-3 outline-none focus:border-[#082442] focus:ring-2 focus:ring-[#082442]/10" placeholder="Property address" value={property.address} onChange={(event) => setProperty((current) => ({ ...current, address: event.target.value }))} />
-                <input className="rounded-xl border border-[#D7D0C7] bg-[#FCFBF8] px-4 py-3 outline-none focus:border-[#082442] focus:ring-2 focus:ring-[#082442]/10" placeholder="City, State ZIP" value={property.cityStateZip} onChange={(event) => setProperty((current) => ({ ...current, cityStateZip: event.target.value }))} />
-                <input className="rounded-xl border border-[#D7D0C7] bg-[#FCFBF8] px-4 py-3 outline-none focus:border-[#082442] focus:ring-2 focus:ring-[#082442]/10" placeholder="Homeowner name" value={property.homeownerName} onChange={(event) => setProperty((current) => ({ ...current, homeownerName: event.target.value }))} />
-                <input className="rounded-xl border border-[#D7D0C7] bg-[#FCFBF8] px-4 py-3 outline-none focus:border-[#082442] focus:ring-2 focus:ring-[#082442]/10" placeholder="Property type" value={property.propertyType} onChange={(event) => setProperty((current) => ({ ...current, propertyType: event.target.value }))} />
-                <input className="rounded-xl border border-[#D7D0C7] bg-[#FCFBF8] px-4 py-3 outline-none focus:border-[#082442] focus:ring-2 focus:ring-[#082442]/10" type="number" placeholder="Beds" value={property.beds || ""} onChange={(event) => {
+                <input className="rounded-xl border border-[#D8CFC2] bg-[#FBF8F3] px-4 py-3 outline-none focus:border-[#0B1F3A] focus:ring-2 focus:ring-[#0B1F3A]/10" placeholder="Property address" value={property.address} onChange={(event) => setProperty((current) => ({ ...current, address: event.target.value }))} />
+                <input className="rounded-xl border border-[#D8CFC2] bg-[#FBF8F3] px-4 py-3 outline-none focus:border-[#0B1F3A] focus:ring-2 focus:ring-[#0B1F3A]/10" placeholder="City, State ZIP" value={property.cityStateZip} onChange={(event) => setProperty((current) => ({ ...current, cityStateZip: event.target.value }))} />
+                <input className="rounded-xl border border-[#D8CFC2] bg-[#FBF8F3] px-4 py-3 outline-none focus:border-[#0B1F3A] focus:ring-2 focus:ring-[#0B1F3A]/10" placeholder="Homeowner name" value={property.homeownerName} onChange={(event) => setProperty((current) => ({ ...current, homeownerName: event.target.value }))} />
+                <input className="rounded-xl border border-[#D8CFC2] bg-[#FBF8F3] px-4 py-3 outline-none focus:border-[#0B1F3A] focus:ring-2 focus:ring-[#0B1F3A]/10" placeholder="Property type" value={property.propertyType} onChange={(event) => setProperty((current) => ({ ...current, propertyType: event.target.value }))} />
+                <input className="rounded-xl border border-[#D8CFC2] bg-[#FBF8F3] px-4 py-3 outline-none focus:border-[#0B1F3A] focus:ring-2 focus:ring-[#0B1F3A]/10" type="number" placeholder="Beds" value={property.beds || ""} onChange={(event) => {
                   const beds = numberValue(event.target.value);
                   setProperty((current) => ({ ...current, beds }));
                   setCounts((current) => ({ ...current, bedroom: beds }));
                 }} />
-                <input className="rounded-xl border border-[#D7D0C7] bg-[#FCFBF8] px-4 py-3 outline-none focus:border-[#082442] focus:ring-2 focus:ring-[#082442]/10" type="number" step="0.5" placeholder="Baths" value={property.baths || ""} onChange={(event) => setProperty((current) => ({ ...current, baths: Number(event.target.value) || 0 }))} />
-                <input className="rounded-xl border border-[#D7D0C7] bg-[#FCFBF8] px-4 py-3 outline-none focus:border-[#082442] focus:ring-2 focus:ring-[#082442]/10" type="number" placeholder="Square feet" value={property.sqft || ""} onChange={(event) => setProperty((current) => ({ ...current, sqft: Number(event.target.value) || 0 }))} />
-                <input className="rounded-xl border border-[#D7D0C7] bg-[#FCFBF8] px-4 py-3 outline-none focus:border-[#082442] focus:ring-2 focus:ring-[#082442]/10" type="number" placeholder="Year built" value={property.yearBuilt || ""} onChange={(event) => setProperty((current) => ({ ...current, yearBuilt: Number(event.target.value) || 0 }))} />
+                <input className="rounded-xl border border-[#D8CFC2] bg-[#FBF8F3] px-4 py-3 outline-none focus:border-[#0B1F3A] focus:ring-2 focus:ring-[#0B1F3A]/10" type="number" step="0.5" placeholder="Baths" value={property.baths || ""} onChange={(event) => setProperty((current) => ({ ...current, baths: Number(event.target.value) || 0 }))} />
+                <input className="rounded-xl border border-[#D8CFC2] bg-[#FBF8F3] px-4 py-3 outline-none focus:border-[#0B1F3A] focus:ring-2 focus:ring-[#0B1F3A]/10" type="number" placeholder="Square feet" value={property.sqft || ""} onChange={(event) => setProperty((current) => ({ ...current, sqft: Number(event.target.value) || 0 }))} />
+                <input className="rounded-xl border border-[#D8CFC2] bg-[#FBF8F3] px-4 py-3 outline-none focus:border-[#0B1F3A] focus:ring-2 focus:ring-[#0B1F3A]/10" type="number" placeholder="Year built" value={property.yearBuilt || ""} onChange={(event) => setProperty((current) => ({ ...current, yearBuilt: Number(event.target.value) || 0 }))} />
               </div>
             </section>
 
-            <section className="rounded-2xl border border-[#DDD7CE] bg-[#F9F7F2] p-6 shadow-[0_10px_30px_rgba(46,42,35,0.05)]">
-              <h2 className="font-serif text-2xl font-semibold text-[#082442]">2. Property cover photo</h2>
-              <p className="mt-1 text-sm text-[#6D7077]">
+            <section className="rounded-2xl border border-[#D8CFC2] bg-[#FBF8F3] p-6 shadow-[0_10px_30px_rgba(46,42,35,0.05)]">
+              <h2 className="font-serif text-2xl font-semibold text-[#0B1F3A]">2. Property cover photo</h2>
+              <p className="mt-1 text-sm text-[#6F6A63]">
                 Upload the home's front exterior or street-view image for the cover. This photo stays separate
                 from room scoring. Without one, Listing AI uses an exterior photo when available.
               </p>
@@ -651,18 +651,18 @@ export default function ListingEvaluationV2Client() {
                 {coverFrontPhoto ? (
                   <img src={coverFrontPhoto.dataUrl} alt="Selected front-of-home cover" className="h-40 w-40 rounded-xl border object-cover" />
                 ) : (
-                  <div className="flex h-40 w-40 items-center justify-center rounded-xl border-2 border-dashed bg-[#F1ECE4] p-4 text-center text-sm text-[#7B7F86]">
+                  <div className="flex h-40 w-40 items-center justify-center rounded-xl border-2 border-dashed bg-[#EFE7DB] p-4 text-center text-sm text-[#6F6A63]">
                     Front / Street View
                   </div>
                 )}
                 <div className="space-y-3">
-                  <label className="inline-flex cursor-pointer rounded-xl bg-[#082442] px-5 py-3 font-semibold text-[#D4A017]">
+                  <label className="inline-flex cursor-pointer rounded-xl bg-[#0B1F3A] px-5 py-3 font-semibold text-[#C6A15B]">
                     {coverFrontPhoto ? "Replace cover photo" : "Upload front / street view"}
                     <input className="hidden" type="file" accept="image/jpeg,image/png,image/webp" onChange={uploadFrontCover} />
                   </label>
                   {coverFrontPhoto && (
                     <div>
-                      <p className="max-w-xs truncate text-sm text-[#6D7077]">{coverFrontPhoto.name}</p>
+                      <p className="max-w-xs truncate text-sm text-[#6F6A63]">{coverFrontPhoto.name}</p>
                       <button className="mt-1 text-sm font-medium text-red-700 underline" onClick={() => setCoverFrontPhoto(null)} type="button">
                         Remove cover photo
                       </button>
@@ -673,9 +673,9 @@ export default function ListingEvaluationV2Client() {
               </div>
             </section>
 
-            <section className="rounded-2xl border border-[#DDD7CE] bg-[#F9F7F2] p-6 shadow-[0_10px_30px_rgba(46,42,35,0.05)]">
-              <h2 className="font-serif text-2xl font-semibold text-[#082442]">3. Build the property</h2>
-              <p className="mt-1 text-sm text-[#6D7077]">
+            <section className="rounded-2xl border border-[#D8CFC2] bg-[#FBF8F3] p-6 shadow-[0_10px_30px_rgba(46,42,35,0.05)]">
+              <h2 className="font-serif text-2xl font-semibold text-[#0B1F3A]">3. Build the property</h2>
+              <p className="mt-1 text-sm text-[#6F6A63]">
                 Add as many instances as the property actually has. Names can be changed later.
               </p>
               <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -683,7 +683,7 @@ export default function ListingEvaluationV2Client() {
                   <label key={section.category} className="rounded-xl border p-4">
                     <span className="text-sm font-medium">{section.label}</span>
                     <input
-                      className="mt-2 w-full rounded-lg border border-[#D7D0C7] bg-[#FCFBF8] px-3 py-2 outline-none focus:border-[#082442] focus:ring-2 focus:ring-[#082442]/10"
+                      className="mt-2 w-full rounded-lg border border-[#D8CFC2] bg-[#FBF8F3] px-3 py-2 outline-none focus:border-[#0B1F3A] focus:ring-2 focus:ring-[#0B1F3A]/10"
                       min={0}
                       max={20}
                       type="number"
@@ -698,7 +698,7 @@ export default function ListingEvaluationV2Client() {
                   </label>
                 ))}
               </div>
-              <button className="mt-6 rounded-xl bg-[#082442] px-5 py-3 font-semibold text-[#D4A017]" onClick={generateSpaces}>
+              <button className="mt-6 rounded-xl bg-[#0B1F3A] px-5 py-3 font-semibold text-[#C6A15B]" onClick={generateSpaces}>
                 Create property sections
               </button>
             </section>
@@ -706,34 +706,34 @@ export default function ListingEvaluationV2Client() {
         ) : (
           <>
             <section className="grid gap-4 md:grid-cols-4">
-              <div className="rounded-2xl border border-[#DDD7CE] border-t-[3px] border-t-[#082442] bg-[#F9F7F2] p-5 shadow-[0_10px_30px_rgba(46,42,35,0.05)]">
-                <p className="text-xs font-bold uppercase text-[#7B7F86]">Overall current</p>
-                <p className="mt-2 font-serif text-3xl font-semibold text-[#082442]">{propertyScores.currentScore ?? "—"}</p>
+              <div className="rounded-2xl border border-[#D8CFC2] border-t-[3px] border-t-[#0B1F3A] bg-[#FBF8F3] p-5 shadow-[0_10px_30px_rgba(46,42,35,0.05)]">
+                <p className="text-xs font-bold uppercase text-[#6F6A63]">Overall current</p>
+                <p className="mt-2 font-serif text-3xl font-semibold text-[#0B1F3A]">{propertyScores.currentScore ?? "—"}</p>
               </div>
-              <div className="rounded-2xl border border-[#DDD7CE] border-t-[3px] border-t-[#082442] bg-[#F9F7F2] p-5 shadow-[0_10px_30px_rgba(46,42,35,0.05)]">
-                <p className="text-xs font-bold uppercase text-[#7B7F86]">Overall potential</p>
-                <p className="mt-2 font-serif text-3xl font-semibold text-[#082442]">{propertyScores.potentialScore ?? "—"}</p>
+              <div className="rounded-2xl border border-[#D8CFC2] border-t-[3px] border-t-[#0B1F3A] bg-[#FBF8F3] p-5 shadow-[0_10px_30px_rgba(46,42,35,0.05)]">
+                <p className="text-xs font-bold uppercase text-[#6F6A63]">Overall potential</p>
+                <p className="mt-2 font-serif text-3xl font-semibold text-[#0B1F3A]">{propertyScores.potentialScore ?? "—"}</p>
               </div>
-              <div className="rounded-2xl border border-[#DDD7CE] border-t-[3px] border-t-[#082442] bg-[#F9F7F2] p-5 shadow-[0_10px_30px_rgba(46,42,35,0.05)]">
-                <p className="text-xs font-bold uppercase text-[#7B7F86]">Confidence</p>
-                <p className="mt-2 font-serif text-3xl font-semibold capitalize text-[#082442]">{propertyScores.confidence}</p>
+              <div className="rounded-2xl border border-[#D8CFC2] border-t-[3px] border-t-[#0B1F3A] bg-[#FBF8F3] p-5 shadow-[0_10px_30px_rgba(46,42,35,0.05)]">
+                <p className="text-xs font-bold uppercase text-[#6F6A63]">Confidence</p>
+                <p className="mt-2 font-serif text-3xl font-semibold capitalize text-[#0B1F3A]">{propertyScores.confidence}</p>
               </div>
-              <div className="rounded-2xl border border-[#DDD7CE] border-t-[3px] border-t-[#082442] bg-[#F9F7F2] p-5 shadow-[0_10px_30px_rgba(46,42,35,0.05)]">
-                <p className="text-xs font-bold uppercase text-[#7B7F86]">Areas complete</p>
-                <p className="mt-2 font-serif text-3xl font-semibold text-[#082442]">
+              <div className="rounded-2xl border border-[#D8CFC2] border-t-[3px] border-t-[#0B1F3A] bg-[#FBF8F3] p-5 shadow-[0_10px_30px_rgba(46,42,35,0.05)]">
+                <p className="text-xs font-bold uppercase text-[#6F6A63]">Areas complete</p>
+                <p className="mt-2 font-serif text-3xl font-semibold text-[#0B1F3A]">
                   {spaces.filter((space) => space.status === "complete").length}/{spaces.filter((space) => space.status !== "not_evaluated").length}
                 </p>
               </div>
             </section>
 
             <div className="grid gap-6 lg:grid-cols-[340px_1fr]">
-              <aside className="rounded-2xl border border-[#DDD7CE] bg-[#F9F7F2] p-4 shadow-[0_10px_30px_rgba(46,42,35,0.05)]">
+              <aside className="rounded-2xl border border-[#D8CFC2] bg-[#FBF8F3] p-4 shadow-[0_10px_30px_rgba(46,42,35,0.05)]">
                 <div className="mb-4 flex items-center justify-between">
                   <div>
-                    <h2 className="font-serif text-xl font-semibold text-[#082442]">Property sections</h2>
-                    <p className="text-xs text-[#7B7F86]">{spaces.length} spaces</p>
+                    <h2 className="font-serif text-xl font-semibold text-[#0B1F3A]">Property sections</h2>
+                    <p className="text-xs text-[#6F6A63]">{spaces.length} spaces</p>
                   </div>
-                  <button className="text-xs font-semibold text-[#9A7100]" onClick={() => setSpaces([])}>
+                  <button className="text-xs font-semibold text-[#A88445]" onClick={() => setSpaces([])}>
                     Edit setup
                   </button>
                 </div>
@@ -743,8 +743,8 @@ export default function ListingEvaluationV2Client() {
                     group.spaces.length ? (
                       <section key={group.category}>
                         <div className="mb-2 flex items-center justify-between">
-                          <h3 className="text-xs font-bold uppercase tracking-wide text-[#7B7F86]">{group.label}</h3>
-                          <button className="text-xs font-semibold text-[#9A7100]" onClick={() => setSpaces((current) => addPropertySpace(current, group.category))}>
+                          <h3 className="text-xs font-bold uppercase tracking-wide text-[#6F6A63]">{group.label}</h3>
+                          <button className="text-xs font-semibold text-[#A88445]" onClick={() => setSpaces((current) => addPropertySpace(current, group.category))}>
                             + Add
                           </button>
                         </div>
@@ -752,10 +752,10 @@ export default function ListingEvaluationV2Client() {
                           {group.spaces.map((space) => {
                             const score = dynamicAnalyses.find((analysis) => analysis.spaceId === space.id);
                             return (
-                              <button key={space.id} className={`w-full rounded-xl border px-3 py-3 text-left ${activeSpaceId === space.id ? "border-[#082442] bg-[#E7EBF0]" : "bg-white"}`} onClick={() => setActiveSpaceId(space.id)}>
+                              <button key={space.id} className={`w-full rounded-xl border px-3 py-3 text-left ${activeSpaceId === space.id ? "border-[#0B1F3A] bg-[#EFE7DB]" : "bg-white"}`} onClick={() => setActiveSpaceId(space.id)}>
                                 <div className="flex items-center justify-between gap-3">
                                   <span className="font-medium">{displaySpaceName(space)}</span>
-                                  <span className="text-xs font-semibold text-[#7B7F86]">
+                                  <span className="text-xs font-semibold text-[#6F6A63]">
                                     {space.status === "not_evaluated" ? "N/E" : score ? score.currentScore : space.photoIds.length ? "Ready" : "Photos"}
                                   </span>
                                 </div>
@@ -769,24 +769,24 @@ export default function ListingEvaluationV2Client() {
                 </div>
               </aside>
 
-              <section className="rounded-2xl border border-[#DDD7CE] bg-[#F9F7F2] p-6 shadow-[0_10px_30px_rgba(46,42,35,0.05)]">
+              <section className="rounded-2xl border border-[#D8CFC2] bg-[#FBF8F3] p-6 shadow-[0_10px_30px_rgba(46,42,35,0.05)]">
                 {activeSpace ? (
                   <>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-[#7B7F86]">Evaluate this space</p>
-                    <h2 className="mt-2 font-serif text-3xl font-semibold text-[#082442]">{displaySpaceName(activeSpace)}</h2>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-[#6F6A63]">Evaluate this space</p>
+                    <h2 className="mt-2 font-serif text-3xl font-semibold text-[#0B1F3A]">{displaySpaceName(activeSpace)}</h2>
 
                     <label className="mt-5 block max-w-lg">
                       <span className="text-sm font-medium">Optional custom name</span>
-                      <input className="mt-2 w-full rounded-xl border border-[#D7D0C7] bg-[#FCFBF8] px-4 py-3 outline-none focus:border-[#082442] focus:ring-2 focus:ring-[#082442]/10" placeholder={activeSpace.defaultLabel} value={activeSpace.customLabel ?? ""} onChange={(event) => renameSpace(activeSpace.id, event.target.value)} />
+                      <input className="mt-2 w-full rounded-xl border border-[#D8CFC2] bg-[#FBF8F3] px-4 py-3 outline-none focus:border-[#0B1F3A] focus:ring-2 focus:ring-[#0B1F3A]/10" placeholder={activeSpace.defaultLabel} value={activeSpace.customLabel ?? ""} onChange={(event) => renameSpace(activeSpace.id, event.target.value)} />
                     </label>
 
-                    <div className="mt-6 rounded-2xl border-2 border-dashed border-[#CFC8BE] p-6">
+                    <div className="mt-6 rounded-2xl border-2 border-dashed border-[#D8CFC2] p-6">
                       <div className="text-center">
-                        <h3 className="font-serif text-lg font-semibold text-[#082442]">Photos for {displaySpaceName(activeSpace)}</h3>
-                        <p className="mt-2 text-sm text-[#7B7F86]">
+                        <h3 className="font-serif text-lg font-semibold text-[#0B1F3A]">Photos for {displaySpaceName(activeSpace)}</h3>
+                        <p className="mt-2 text-sm text-[#6F6A63]">
                           These photos are isolated to this space and routed to the correct specialist AI.
                         </p>
-                        <label className="mt-5 inline-block cursor-pointer rounded-xl bg-[#082442] px-5 py-3 font-semibold text-[#D4A017]">
+                        <label className="mt-5 inline-block cursor-pointer rounded-xl bg-[#0B1F3A] px-5 py-3 font-semibold text-[#C6A15B]">
                           + Add photos
                           <input className="hidden" type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={(event) => addPhotos(event, activeSpace)} />
                         </label>
@@ -804,10 +804,10 @@ export default function ListingEvaluationV2Client() {
                       ) : null}
 
                       <div className="mt-5 flex flex-wrap justify-center gap-3">
-                        <button className="rounded-xl bg-[#082442] px-5 py-3 font-semibold text-[#D4A017] disabled:opacity-40" disabled={!activePhotos.length || analyzingSpaceId === activeSpace.id} onClick={() => analyzeSpace(activeSpace)}>
+                        <button className="rounded-xl bg-[#0B1F3A] px-5 py-3 font-semibold text-[#C6A15B] disabled:opacity-40" disabled={!activePhotos.length || analyzingSpaceId === activeSpace.id} onClick={() => analyzeSpace(activeSpace)}>
                           {analyzingSpaceId === activeSpace.id ? "Analyzing..." : activeAnalysis ? "Re-analyze space" : "Analyze space"}
                         </button>
-                        <button className="px-4 py-3 text-sm font-medium text-[#7B7F86] underline" onClick={() => markNoPhotos(activeSpace.id)}>
+                        <button className="px-4 py-3 text-sm font-medium text-[#6F6A63] underline" onClick={() => markNoPhotos(activeSpace.id)}>
                           No photos available / do not evaluate
                         </button>
                       </div>
@@ -815,37 +815,37 @@ export default function ListingEvaluationV2Client() {
                     </div>
 
                     <div className="mt-6 grid gap-4 md:grid-cols-3">
-                      <div className="rounded-xl bg-[#F1ECE4] p-4">
-                        <p className="text-xs uppercase text-[#7B7F86]">Current score</p>
-                        <p className="mt-2 font-serif text-3xl font-semibold text-[#082442]">{activeAnalysis?.currentScore ?? "—"}</p>
+                      <div className="rounded-xl bg-[#EFE7DB] p-4">
+                        <p className="text-xs uppercase text-[#6F6A63]">Current score</p>
+                        <p className="mt-2 font-serif text-3xl font-semibold text-[#0B1F3A]">{activeAnalysis?.currentScore ?? "—"}</p>
                       </div>
-                      <div className="rounded-xl bg-[#F1ECE4] p-4">
-                        <p className="text-xs uppercase text-[#7B7F86]">Potential score</p>
-                        <p className="mt-2 font-serif text-3xl font-semibold text-[#082442]">{activeAnalysis?.potentialScore ?? "—"}</p>
+                      <div className="rounded-xl bg-[#EFE7DB] p-4">
+                        <p className="text-xs uppercase text-[#6F6A63]">Potential score</p>
+                        <p className="mt-2 font-serif text-3xl font-semibold text-[#0B1F3A]">{activeAnalysis?.potentialScore ?? "—"}</p>
                       </div>
-                      <div className="rounded-xl bg-[#F1ECE4] p-4">
-                        <p className="text-xs uppercase text-[#7B7F86]">Confidence</p>
-                        <p className="mt-2 font-serif text-3xl font-semibold capitalize text-[#082442]">{activeAnalysis?.confidence ?? "Pending"}</p>
+                      <div className="rounded-xl bg-[#EFE7DB] p-4">
+                        <p className="text-xs uppercase text-[#6F6A63]">Confidence</p>
+                        <p className="mt-2 font-serif text-3xl font-semibold capitalize text-[#0B1F3A]">{activeAnalysis?.confidence ?? "Pending"}</p>
                       </div>
                     </div>
 
                     {activeAnalysis ? (
                       <div className="mt-6 space-y-6">
                         <section>
-                          <h3 className="font-serif text-xl font-semibold text-[#082442]">What Presents Well</h3>
+                          <h3 className="font-serif text-xl font-semibold text-[#0B1F3A]">What Presents Well</h3>
                           <div className="mt-3 grid gap-3 md:grid-cols-2">
                             {activeAnalysis.visibleFindings.filter((finding) => finding.kind === "positive").map((finding) => (
                               <div key={finding.id} className="rounded-xl border p-4">
-                                <p className="text-xs font-bold uppercase text-[#9A7100]">Positive</p>
+                                <p className="text-xs font-bold uppercase text-[#A88445]">Positive</p>
                                 <p className="mt-1 font-semibold">{finding.label}</p>
-                                <p className="mt-2 text-sm text-[#6D7077]">{finding.evidence}</p>
+                                <p className="mt-2 text-sm text-[#6F6A63]">{finding.evidence}</p>
                               </div>
                             ))}
                           </div>
                         </section>
 
                         <section>
-                          <h3 className="font-serif text-xl font-semibold text-[#082442]">Opportunities to Raise This Score</h3>
+                          <h3 className="font-serif text-xl font-semibold text-[#0B1F3A]">Opportunities to Raise This Score</h3>
                           <div className="mt-3 space-y-3">
                             {activeRecommendations.length ? activeRecommendations.map((recommendation) => (
                               <label key={recommendation.id} className="flex cursor-pointer gap-3 rounded-xl border p-4">
@@ -853,13 +853,13 @@ export default function ListingEvaluationV2Client() {
                                 <div className="flex-1">
                                   <div className="flex flex-wrap items-center justify-between gap-2">
                                     <p className="font-semibold">{recommendation.title}</p>
-                                    <span className="rounded-full bg-[#F5E9C5] px-3 py-1 text-xs font-bold text-[#7A5800]">+{recommendation.scoreImpact} potential</span>
+                                    <span className="rounded-full bg-[#EEDFBF] px-3 py-1 text-xs font-bold text-[#8B6B2E]">+{recommendation.scoreImpact} potential</span>
                                   </div>
-                                  <p className="mt-1 text-sm text-[#6D7077]">{recommendation.reason}</p>
-                                  <p className="mt-1 text-xs text-[#7B7F86]">Visible evidence: {recommendation.evidence}</p>
+                                  <p className="mt-1 text-sm text-[#6F6A63]">{recommendation.reason}</p>
+                                  <p className="mt-1 text-xs text-[#6F6A63]">Visible evidence: {recommendation.evidence}</p>
                                 </div>
                               </label>
-                            )) : <p className="text-sm text-[#7B7F86]">No supported preparation recommendations were returned for this space.</p>}
+                            )) : <p className="text-sm text-[#6F6A63]">No supported preparation recommendations were returned for this space.</p>}
                           </div>
                         </section>
                       </div>
@@ -872,9 +872,9 @@ export default function ListingEvaluationV2Client() {
             </div>
 
             {prioritizedRecommendations.length > 0 ? (
-              <section className="rounded-2xl border border-[#DDD7CE] bg-[#F9F7F2] p-6 shadow-[0_10px_30px_rgba(46,42,35,0.05)]">
-                <h2 className="font-serif text-2xl font-semibold text-[#082442]">Highest-impact preparation plan</h2>
-                <p className="mt-1 text-sm text-[#6D7077]">
+              <section className="rounded-2xl border border-[#D8CFC2] bg-[#FBF8F3] p-6 shadow-[0_10px_30px_rgba(46,42,35,0.05)]">
+                <h2 className="font-serif text-2xl font-semibold text-[#0B1F3A]">Highest-impact preparation plan</h2>
+                <p className="mt-1 text-sm text-[#6F6A63]">
                   This is the default seller-facing order. Room views remain available above.
                 </p>
                 <div className="mt-5 space-y-6">
@@ -883,7 +883,7 @@ export default function ListingEvaluationV2Client() {
                     if (!items.length) return null;
                     return (
                       <div key={priority}>
-                        <h3 className="text-xs font-bold uppercase tracking-[0.15em] text-[#7B7F86]">{priorityLabel[priority]}</h3>
+                        <h3 className="text-xs font-bold uppercase tracking-[0.15em] text-[#6F6A63]">{priorityLabel[priority]}</h3>
                         <div className="mt-3 grid gap-3 md:grid-cols-2">
                           {items.map((item) => {
                             const space = spaces.find((candidate) => candidate.id === item.spaceId);
@@ -891,10 +891,10 @@ export default function ListingEvaluationV2Client() {
                               <div key={item.id} className="rounded-xl border p-4">
                                 <div className="flex items-center justify-between gap-3">
                                   <p className="font-semibold">{item.title}</p>
-                                  <span className="text-sm font-bold text-[#9A7100]">+{item.scoreImpact}</span>
+                                  <span className="text-sm font-bold text-[#A88445]">+{item.scoreImpact}</span>
                                 </div>
-                                <p className="mt-1 text-xs font-semibold uppercase text-[#7B7F86]">{space ? displaySpaceName(space) : "Property"}</p>
-                                <p className="mt-2 text-sm text-[#6D7077]">{item.reason}</p>
+                                <p className="mt-1 text-xs font-semibold uppercase text-[#6F6A63]">{space ? displaySpaceName(space) : "Property"}</p>
+                                <p className="mt-2 text-sm text-[#6F6A63]">{item.reason}</p>
                               </div>
                             );
                           })}
@@ -906,14 +906,14 @@ export default function ListingEvaluationV2Client() {
               </section>
             ) : null}
 
-            <section className="rounded-2xl border border-[#DDD7CE] bg-[#F9F7F2] p-6 shadow-[0_10px_30px_rgba(46,42,35,0.05)]">
-              <h2 className="font-serif text-2xl font-semibold text-[#082442]">Generate seller report</h2>
-              <p className="mt-1 text-sm text-[#6D7077]">
+            <section className="rounded-2xl border border-[#D8CFC2] bg-[#FBF8F3] p-6 shadow-[0_10px_30px_rgba(46,42,35,0.05)]">
+              <h2 className="font-serif text-2xl font-semibold text-[#0B1F3A]">Generate seller report</h2>
+              <p className="mt-1 text-sm text-[#6F6A63]">
                 Property details above will be used in the report. Agent name, headshot, brokerage, phone and email are pulled from the Profile page in this dashboard.
               </p>
               {draftMessage ? <p className="mt-2 text-xs font-medium text-emerald-700">{draftMessage}</p> : null}
               <button
-                className={`mt-6 inline-flex min-w-[220px] items-center justify-center gap-2 rounded-xl px-5 py-3 font-semibold shadow-sm transition-all duration-150 ${generatingReport ? "cursor-wait bg-[#D4A017] text-[#082442] scale-[0.98]" : "cursor-pointer bg-[#082442] text-[#D4A017] hover:bg-[#04182D] active:scale-[0.98]"} disabled:cursor-not-allowed disabled:opacity-40`}
+                className={`mt-6 inline-flex min-w-[220px] items-center justify-center gap-2 rounded-xl px-5 py-3 font-semibold shadow-sm transition-all duration-150 ${generatingReport ? "cursor-wait bg-[#C6A15B] text-[#0B1F3A] scale-[0.98]" : "cursor-pointer bg-[#0B1F3A] text-[#C6A15B] hover:bg-[#08172C] active:scale-[0.98]"} disabled:cursor-not-allowed disabled:opacity-40`}
                 disabled={!dynamicAnalyses.length || generatingReport}
                 onClick={() => void generateAndSaveReport()}
                 aria-busy={generatingReport}
@@ -922,7 +922,7 @@ export default function ListingEvaluationV2Client() {
                   <>
                     <span
                       aria-hidden="true"
-                      className="h-4 w-4 animate-spin rounded-full border-2 border-[#082442]/30 border-t-[#082442]"
+                      className="h-4 w-4 animate-spin rounded-full border-2 border-[#0B1F3A]/30 border-t-[#0B1F3A]"
                     />
                     Generating Report...
                   </>
@@ -934,7 +934,7 @@ export default function ListingEvaluationV2Client() {
                 <p className="mt-3 text-sm font-semibold text-red-700">{reportError}</p>
               ) : null}
               {!dynamicAnalyses.length ? (
-                <p className="mt-2 text-sm font-medium text-[#9A7100]">
+                <p className="mt-2 text-sm font-medium text-[#A88445]">
                   Analyze at least one room or property area before generating the seller report.
                 </p>
               ) : null}
