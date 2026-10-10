@@ -297,7 +297,7 @@ function drawCover(doc: jsPDF, input: ReportInput) {
   });
   if (location) {
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(6.4);
+    doc.setFontSize(6.1);
     doc.text(location.toUpperCase(), titleBoxX + titleBoxW / 2, dividerY + 20, {
       align: "center",
       maxWidth: titleBoxW - 14,
@@ -488,7 +488,7 @@ function drawRoomSection(
   doc.text("INDIVIDUAL SPACE EVALUATION", pageX, 24);
 
   const photoY = 29;
-  const photoH = 58;
+  const photoH = 42;
   doc.setFillColor(241, 236, 228);
   doc.roundedRect(pageX, photoY, contentW, photoH, 3, 3, "F");
 
@@ -528,23 +528,23 @@ function drawRoomSection(
     } catch {}
   }
 
-  const scoreY = 92;
+  const scoreY = 77;
   const scoreGap = 4;
   const scoreW = (contentW - scoreGap * 2) / 3;
 
   function dashboardScoreCard(x: number, label: string, value: string | number) {
     doc.setFillColor(241, 236, 228);
-    doc.roundedRect(x, scoreY, scoreW, 25, 3, 3, "F");
+    doc.roundedRect(x, scoreY, scoreW, 20, 3, 3, "F");
 
     doc.setFont("helvetica", "normal");
     doc.setFontSize(6.2);
     doc.setTextColor(123, 127, 134);
-    doc.text(label.toUpperCase(), x + 4.5, scoreY + 7);
+    doc.text(label.toUpperCase(), x + 4.5, scoreY + 6);
 
     doc.setFont("times", "bold");
-    doc.setFontSize(16.5);
+    doc.setFontSize(15.5);
     doc.setTextColor(...NAVY);
-    doc.text(String(value), x + 4.5, scoreY + 18.5);
+    doc.text(String(value), x + 4.5, scoreY + 15.5);
   }
 
   dashboardScoreCard(pageX, "Current score", analysis.currentScore);
@@ -555,17 +555,17 @@ function drawRoomSection(
     analysis.confidence.charAt(0).toUpperCase() + analysis.confidence.slice(1),
   );
 
-  let y = 127;
+  let y = 108;
 
   doc.setFont("times", "bold");
   doc.setFontSize(12.2);
   doc.setTextColor(...NAVY);
   doc.text("What Presents Well", pageX, y);
-  y += 7;
+  y += 6;
 
   const positiveGap = 3;
   const positiveW = (contentW - positiveGap) / 2;
-  const positiveH = 29;
+  const positiveH = 24;
 
   positives.forEach((finding, index) => {
     const col = index % 2;
@@ -581,34 +581,34 @@ function drawRoomSection(
     doc.setFont("helvetica", "bold");
     doc.setFontSize(6.6);
     doc.setTextColor(154, 113, 0);
-    doc.text("POSITIVE", x + 4, cardY + 7);
+    doc.text("POSITIVE", x + 4, cardY + 6);
 
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(7.8);
+    doc.setFontSize(7.4);
     doc.setTextColor(...NAVY);
     const titleLines = doc.splitTextToSize(finding.label, positiveW - 8).slice(0, 2);
-    doc.text(titleLines, x + 4, cardY + 14);
+    doc.text(titleLines, x + 4, cardY + 12);
 
     doc.setFont("helvetica", "normal");
     doc.setFontSize(6.4);
     doc.setTextColor(109, 112, 119);
-    const titleHeight = titleLines.length * 3.6;
+    const titleHeight = titleLines.length * 3.3;
     const evidenceLines = doc
       .splitTextToSize(finding.evidence, positiveW - 8)
-      .slice(0, 3);
-    doc.text(evidenceLines, x + 4, cardY + 14 + titleHeight + 3);
+      .slice(0, 2);
+    doc.text(evidenceLines, x + 4, cardY + 12 + titleHeight + 2.5);
   });
 
   const positiveRows = Math.ceil(positives.length / 2);
-  y += positiveRows * (positiveH + 3) + 5;
+  y += positiveRows * (positiveH + 2.5) + 4;
 
   doc.setFont("times", "bold");
-  doc.setFontSize(13);
+  doc.setFontSize(12.2);
   doc.setTextColor(...NAVY);
   doc.text("Opportunities to Raise This Score", pageX, y);
-  y += 7;
+  y += 6;
 
-  const opportunityH = 23;
+  const opportunityH = 19.5;
 
   fixes.forEach((rec) => {
     doc.setFillColor(249, 247, 242);
@@ -618,36 +618,36 @@ function drawRoomSection(
 
     // Dashboard-style selected checkbox.
     doc.setFillColor(13, 110, 253);
-    doc.roundedRect(pageX + 4, y + 8.2, 3.5, 3.5, 0.5, 0.5, "F");
+    doc.roundedRect(pageX + 4, y + 6.8, 3.2, 3.2, 0.5, 0.5, "F");
     doc.setDrawColor(255, 255, 255);
     doc.setLineWidth(0.45);
-    doc.line(pageX + 4.7, y + 10, pageX + 5.5, y + 10.8);
-    doc.line(pageX + 5.5, y + 10.8, pageX + 6.9, y + 9.1);
+    doc.line(pageX + 4.6, y + 8.4, pageX + 5.3, y + 9.1);
+    doc.line(pageX + 5.3, y + 9.1, pageX + 6.5, y + 7.7);
 
     const textX = pageX + 10;
     const pillW = 26;
     const pillX = pageX + contentW - pillW - 4;
 
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(7.8);
+    doc.setFontSize(7.3);
     doc.setTextColor(...NAVY);
     const titleLines = doc.splitTextToSize(rec.title, contentW - 49).slice(0, 1);
-    doc.text(titleLines, textX, y + 8);
+    doc.text(titleLines, textX, y + 7);
 
     doc.setFillColor(245, 233, 197);
-    doc.roundedRect(pillX, y + 4.5, pillW, 7, 3.5, 3.5, "F");
+    doc.roundedRect(pillX, y + 3.5, pillW, 6.5, 3.25, 3.25, "F");
     doc.setFont("helvetica", "bold");
     doc.setFontSize(6.4);
     doc.setTextColor(122, 88, 0);
-    doc.text(`+${rec.scoreImpact} potential`, pillX + pillW / 2, y + 9.2, {
+    doc.text(`+${rec.scoreImpact} potential`, pillX + pillW / 2, y + 7.9, {
       align: "center",
     });
 
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(6.7);
+    doc.setFontSize(6.2);
     doc.setTextColor(109, 112, 119);
-    const reasonLines = doc.splitTextToSize(rec.reason, contentW - 20).slice(0, 2);
-    doc.text(reasonLines, textX, y + 14);
+    const reasonLines = doc.splitTextToSize(rec.reason, contentW - 20).slice(0, 1);
+    doc.text(reasonLines, textX, y + 12);
 
     if (rec.evidence) {
       doc.setFontSize(5.9);
@@ -655,10 +655,10 @@ function drawRoomSection(
       const evidenceLines = doc
         .splitTextToSize(`Visible evidence: ${rec.evidence}`, contentW - 20)
         .slice(0, 1);
-      doc.text(evidenceLines, textX, y + 20.5);
+      doc.text(evidenceLines, textX, y + 16.5);
     }
 
-    y += opportunityH + 3;
+    y += opportunityH + 2.5;
   });
 
   drawFooter(doc, page);
