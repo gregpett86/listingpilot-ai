@@ -26,11 +26,11 @@ const PAGE_H = 279.4;
 const M = 16;
 type PdfColor = [number, number, number];
 
-const NAVY: PdfColor = [8, 23, 54];
-const GOLD: PdfColor = [230, 145, 0];
-const MUTED: PdfColor = [83, 103, 134];
-const LIGHT: PdfColor = [247, 249, 252];
-const BORDER: PdfColor = [205, 214, 226];
+const NAVY: PdfColor = [11, 31, 58];
+const GOLD: PdfColor = [198, 161, 91];
+const MUTED: PdfColor = [111, 106, 99];
+const LIGHT: PdfColor = [251, 248, 243];
+const BORDER: PdfColor = [216, 207, 194];
 
 function safeFilename(value: string) {
   return (value || "property")
@@ -228,7 +228,7 @@ function drawCover(doc: jsPDF, input: ReportInput) {
 
   // Same CMA-family typography and agent strip, with a centered square photo
   // and generous cream margins instead of the previous edge-to-edge image.
-  doc.setFillColor(245, 243, 239);
+  doc.setFillColor(244, 240, 232);
   doc.rect(0, 0, PAGE_W, PAGE_H, "F");
 
   const titleBoxX = 31.8;
@@ -305,18 +305,18 @@ function drawCover(doc: jsPDF, input: ReportInput) {
   }
 
   // Agent strip.
-  doc.setFillColor(245, 243, 239);
+  doc.setFillColor(244, 240, 232);
   doc.rect(0, agentBarY, PAGE_W, agentBarH, "F");
-  doc.setFillColor(212, 165, 116);
+  doc.setFillColor(198, 161, 91);
   doc.rect(0, agentBarY, PAGE_W, 0.8, "F");
 
   const avatarR = 10.5;
   const avatarCX = 24;
   const avatarCY = agentBarY + agentBarH / 2;
 
-  doc.setFillColor(212, 165, 116);
+  doc.setFillColor(198, 161, 91);
   doc.circle(avatarCX, avatarCY, avatarR + 1.2, "F");
-  doc.setFillColor(245, 243, 239);
+  doc.setFillColor(244, 240, 232);
   doc.circle(avatarCX, avatarCY, avatarR + 0.5, "F");
 
   if (agent.headshotDataUrl) {
@@ -471,7 +471,7 @@ function drawRoomSection(
     .slice(0, 3);
 
   // Match the Listing AI dashboard visual language exactly.
-  doc.setFillColor(249, 247, 242);
+  doc.setFillColor(251, 248, 243);
   doc.rect(0, 0, PAGE_W, PAGE_H, "F");
 
   const pageX = 13;
@@ -489,7 +489,7 @@ function drawRoomSection(
 
   const photoY = 29;
   const photoH = 42;
-  doc.setFillColor(241, 236, 228);
+  doc.setFillColor(239, 231, 219);
   doc.roundedRect(pageX, photoY, contentW, photoH, 3, 3, "F");
 
   if (photo?.dataUrl) {
@@ -533,7 +533,7 @@ function drawRoomSection(
   const scoreW = (contentW - scoreGap * 2) / 3;
 
   function dashboardScoreCard(x: number, label: string, value: string | number) {
-    doc.setFillColor(241, 236, 228);
+    doc.setFillColor(239, 231, 219);
     doc.roundedRect(x, scoreY, scoreW, 20, 3, 3, "F");
 
     doc.setFont("helvetica", "normal");
@@ -573,14 +573,14 @@ function drawRoomSection(
     const x = pageX + col * (positiveW + positiveGap);
     const cardY = y + row * (positiveH + 3);
 
-    doc.setFillColor(249, 247, 242);
+    doc.setFillColor(251, 248, 243);
     doc.setDrawColor(8, 23, 54);
     doc.setLineWidth(0.25);
     doc.roundedRect(x, cardY, positiveW, positiveH, 3, 3, "FD");
 
     doc.setFont("helvetica", "bold");
     doc.setFontSize(6.6);
-    doc.setTextColor(154, 113, 0);
+    doc.setTextColor(168, 132, 69);
     doc.text("POSITIVE", x + 4, cardY + 6);
 
     doc.setFont("helvetica", "bold");
@@ -611,7 +611,7 @@ function drawRoomSection(
   const opportunityH = 19.5;
 
   fixes.forEach((rec) => {
-    doc.setFillColor(249, 247, 242);
+    doc.setFillColor(251, 248, 243);
     doc.setDrawColor(8, 23, 54);
     doc.setLineWidth(0.25);
     doc.roundedRect(pageX, y, contentW, opportunityH, 3, 3, "FD");
@@ -634,11 +634,11 @@ function drawRoomSection(
     const titleLines = doc.splitTextToSize(rec.title, contentW - 49).slice(0, 1);
     doc.text(titleLines, textX, y + 7);
 
-    doc.setFillColor(245, 233, 197);
+    doc.setFillColor(238, 223, 191);
     doc.roundedRect(pillX, y + 3.5, pillW, 6.5, 3.25, 3.25, "F");
     doc.setFont("helvetica", "bold");
     doc.setFontSize(6.4);
-    doc.setTextColor(122, 88, 0);
+    doc.setTextColor(139, 107, 46);
     doc.text(`+${rec.scoreImpact} potential`, pillX + pillW / 2, y + 7.9, {
       align: "center",
     });
