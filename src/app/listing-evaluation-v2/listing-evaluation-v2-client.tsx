@@ -102,6 +102,60 @@ async function squareCoverPhoto(file: File): Promise<string> {
   }
 }
 
+async function circularReportHeadshot(dataUrl?: string) {
+  if (!dataUrl) return undefined;
+
+  return new Promise<string>((resolve) => {
+    const image = new Image();
+
+    image.onload = () => {
+      const size = 600;
+      const canvas = document.createElement("canvas");
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        resolve(dataUrl);
+        return;
+      }
+
+      const sourceSide = Math.min(image.naturalWidth, image.naturalHeight);
+      const sourceX = (image.naturalWidth - sourceSide) / 2;
+      const sourceY = Math.max(
+        0,
+        Math.min(
+          image.naturalHeight - sourceSide,
+          (image.naturalHeight - sourceSide) * 0.28,
+        ),
+      );
+
+      ctx.clearRect(0, 0, size, size);
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(size / 2, size / 2, size / 2 - 3, 0, Math.PI * 2);
+      ctx.closePath();
+      ctx.clip();
+      ctx.drawImage(
+        image,
+        sourceX,
+        sourceY,
+        sourceSide,
+        sourceSide,
+        0,
+        0,
+        size,
+        size,
+      );
+      ctx.restore();
+
+      resolve(canvas.toDataURL("image/png"));
+    };
+
+    image.onerror = () => resolve(dataUrl);
+    image.src = dataUrl;
+  });
+}
+
 function coverageForPhotoCount(count: number): SpaceAnalysis["coverage"] {
   if (count >= 4) return "excellent";
   if (count >= 2) return "good";
@@ -516,7 +570,9 @@ export default function ListingEvaluationV2Client() {
         brokerage: profile.brokerageName || agent.brokerage || "Realty Edge Pro",
         phone: profile.phone || agent.phone,
         email: profile.email || agent.email,
-        headshotDataUrl: profile.headshotDataUrl || undefined,
+        headshotDataUrl: await circularReportHeadshot(
+          profile.headshotDataUrl || undefined,
+        ),
       };
 
       try {
