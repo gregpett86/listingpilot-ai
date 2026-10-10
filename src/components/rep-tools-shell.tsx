@@ -42,25 +42,25 @@ const nav = [
 
 function Sidebar({ activeLabel, close }: { activeLabel?: string; close?: () => void }) {
   return (
-    <aside className="flex h-full w-[252px] min-w-[252px] flex-col border-r border-[#DED8CF] bg-[#F4F0E8] text-[#1E2430]">
-      <Link href="/tools-dashboard" className="flex min-h-[94px] items-center border-b border-[#DED8CF] px-6 no-underline">
+    <aside className="flex h-full w-[252px] min-w-[252px] flex-col border-r border-[#D8CFC2] bg-[#F4F0E8] text-[#1E2430]">
+      <Link href="/tools-dashboard" className="flex min-h-[94px] items-center border-b border-[#D8CFC2] px-6 no-underline">
         <img src="/rep-tools-logo.svg" alt="Realty Edge Pro" className="h-auto w-[190px] max-w-full" />
       </Link>
       <nav className="flex-1 px-4 py-6">
         {nav.map((item) => {
           const active = item.label === activeLabel;
-          const className = `mb-2 flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-[14px] font-semibold transition ${active ? "bg-[#082442] text-[#D4A017] shadow-sm" : item.href ? "text-[#3B424D] hover:bg-white hover:text-[#082442]" : "cursor-default text-[#7B7F86]"}`;
+          const className = `mb-2 flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-[14px] font-semibold transition ${active ? "bg-[#0B1F3A] text-[#C6A15B] shadow-sm" : item.href ? "text-[#3B424D] hover:bg-white hover:text-[#0B1F3A]" : "cursor-default text-[#6F6A63]"}`;
           if (!item.href) {
             return <div key={item.label} className={className} aria-disabled="true"><span>{item.icon}</span><span>{item.label}</span></div>;
           }
           return <Link key={item.label} href={item.href} onClick={close} className={className + " no-underline"}><span>{item.icon}</span><span>{item.label}</span></Link>;
         })}
       </nav>
-      <div className="border-t border-[#DED8CF] px-6 py-5">
-        <p className="font-serif text-sm font-bold text-[#082442]">REALTY EDGE TOOLS</p>
-        <p className="mt-1 text-[11px] uppercase tracking-[0.14em] text-[#8B8172]">CMA + Listing Intelligence</p>
+      <div className="border-t border-[#D8CFC2] px-6 py-5">
+        <p className="font-serif text-sm font-bold text-[#0B1F3A]">REALTY EDGE TOOLS</p>
+        <p className="mt-1 text-[11px] uppercase tracking-[0.14em] text-[#8A7F72]">CMA + Listing Intelligence</p>
       </div>
-      {close ? <button type="button" aria-label="Close menu" onClick={close} className="absolute right-3 top-3 rounded-lg bg-[#082442] p-2 text-[#D4A017]"><CloseIcon /></button> : null}
+      {close ? <button type="button" aria-label="Close menu" onClick={close} className="absolute right-3 top-3 rounded-lg bg-[#0B1F3A] p-2 text-[#C6A15B]"><CloseIcon /></button> : null}
     </aside>
   );
 }
@@ -77,13 +77,13 @@ export function RepToolsShell({ activeLabel = "", children }: Props) {
   }, []);
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-[#EEE9E0]">
-      <div className="h-[3px] shrink-0 bg-[#D4A017]" />
+    <div className="flex h-screen flex-col overflow-hidden bg-[#F4F0E8]">
+      <div className="h-[3px] shrink-0 bg-[#C6A15B]" />
       <div className="flex min-h-0 flex-1 overflow-hidden">
         {!mobile && <Sidebar activeLabel={activeLabel} />}
         {mobile && (
           <>
-            <button type="button" aria-label="Open menu" onClick={() => setOpen(true)} className="fixed left-4 top-4 z-50 flex h-12 w-12 items-center justify-center rounded-xl bg-[#082442] text-[#D4A017] shadow-lg"><MenuIcon /></button>
+            <button type="button" aria-label="Open menu" onClick={() => setOpen(true)} className="fixed left-4 top-4 z-50 flex h-12 w-12 items-center justify-center rounded-xl bg-[#0B1F3A] text-[#C6A15B] shadow-lg"><MenuIcon /></button>
             {open && <>
               <button type="button" aria-label="Close menu backdrop" onClick={() => setOpen(false)} className="fixed inset-0 z-50 bg-black/40" />
               <div className="fixed bottom-0 left-0 top-0 z-[51]"><Sidebar activeLabel={activeLabel} close={() => setOpen(false)} /></div>
@@ -98,11 +98,11 @@ export function RepToolsShell({ activeLabel = "", children }: Props) {
 
 export function ToolsPageHeader({ eyebrow, title, description }: { eyebrow?: string; title: string; description: string }) {
   return (
-    <header className="border-b border-[#DED8CF] bg-[#F8F5EF] px-6 py-7 sm:px-10">
+    <header className="border-b border-[#D8CFC2] bg-[#FBF8F3] px-6 py-7 sm:px-10">
       <div className="mx-auto max-w-7xl">
-        {eyebrow ? <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#9A7100]">{eyebrow}</p> : null}
-        <h1 className="mt-2 font-serif text-3xl font-semibold tracking-[-0.025em] text-[#082442]">{title}</h1>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-[#6D7077]">{description}</p>
+        {eyebrow ? <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#A88445]">{eyebrow}</p> : null}
+        <h1 className="mt-2 font-serif text-3xl font-semibold tracking-[-0.025em] text-[#0B1F3A]">{title}</h1>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-[#6F6A63]">{description}</p>
       </div>
     </header>
   );
