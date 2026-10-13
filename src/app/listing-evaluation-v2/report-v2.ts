@@ -275,32 +275,31 @@ function drawCover(doc: jsPDF, input: ReportInput) {
   doc.setLineWidth(0.35);
   doc.line(PAGE_W / 2 - 31, dividerY, PAGE_W / 2 + 31, dividerY);
 
+  const titleCenterX = titleBoxX + titleBoxW / 2;
+
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(6.8);
+  doc.setFontSize(6.4);
   doc.setTextColor(26, 26, 26);
-  doc.text(
-    "YOUR LISTING READINESS EVALUATION",
-    titleBoxX + titleBoxW / 2,
-    dividerY + 7,
-    {
-      align: "center",
-      charSpace: 1.5,
-    },
-  );
+
+  // Do not use jsPDF charSpace with centered text here. It changes the rendered
+  // width after alignment is calculated and was visually pushing this line right.
+  doc.text("YOUR LISTING READINESS EVALUATION", titleCenterX, dividerY + 7, {
+    align: "center",
+  });
 
   const address = property.address || "Property Address";
   const location = property.cityStateZip || "";
   doc.setFontSize(8.2);
-  doc.text(address.toUpperCase(), titleBoxX + titleBoxW / 2, dividerY + 14, {
+  doc.text(address.toUpperCase(), titleCenterX, dividerY + 14, {
     align: "center",
-    maxWidth: titleBoxW - 14,
+    maxWidth: titleBoxW - 18,
   });
   if (location) {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(6.1);
-    doc.text(location.toUpperCase(), titleBoxX + titleBoxW / 2, dividerY + 20, {
+    doc.text(location.toUpperCase(), titleCenterX, dividerY + 20, {
       align: "center",
-      maxWidth: titleBoxW - 14,
+      maxWidth: titleBoxW - 18,
     });
   }
 
