@@ -364,40 +364,80 @@ export default function ListingEvaluationV2Client() {
     event.target.value = "";
   }
 
-  function startNewProperty() {
-    if (!window.confirm("Start a new property? Your current draft will be replaced. Previously generated reports will remain in Listing AI Reports.")) return;
+  async function startNewProperty() {
+    if (generatingReport || analyzingSpaceId) return;
 
-    setProperty({
-      address: "",
-      cityStateZip: "",
-      homeownerName: "",
-      beds: 3,
-      baths: 2,
-      sqft: 0,
-      yearBuilt: 0,
-      propertyType: "Single Family",
-    });
-    setCounts({
-      bedroom: 3,
-      bathroom: 2,
-      kitchen: 1,
-      living: 1,
-      dining: 1,
-      exterior: 2,
-      landscaping: 1,
-    });
-    setSpaces([]);
-    setPhotos([]);
-    setCoverFrontPhoto(null);
-    setCoverUploadError("");
-    setAnalyses([]);
-    setRecommendations([]);
-    setActiveSpaceId(undefined);
-    setAnalyzingSpaceId(undefined);
-    setAnalysisError("");
+    const hasWork = Boolean(property.address.trim() || photos.length || analyses.length);
+    const hasCompletedAnalysis = dynamicAnalyses.length > 0;
+    const message = hasCompletedAnalysis
+      ? "Save this property's evaluation under Listing AI Reports and start a new listing?"
+      : hasWork
+        ? "This property has no completed analysis to save as a report. Discard this draft and start a new listing?"
+        : "Start a new listing?";
+    if (!window.confirm(message)) return;
+
+    setGeneratingReport(true);
     setReportError("");
-    setDraftMessage("New property started. Your saved reports and agent profile are unchanged.");
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    try {
+      if (hasCompletedAnalysis) {
+        const profile = loadRepToolsProfile();
+        const now = new Date().toISOString();
+        const reportId = `listing-ai-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        await saveListingAiReport({
+          id: reportId,
+          evaluation: {
+            ...evaluation,
+            id: reportId,
+            createdAt: now,
+            updatedAt: now,
+          },
+          agent: {
+            name: profile.fullName || agent.name || "Your Real Estate Professional",
+            brokerage: profile.brokerageName || agent.brokerage || "Realty Edge Pro",
+            phone: profile.phone || agent.phone,
+            email: profile.email || agent.email,
+            headshotDataUrl: await circularReportHeadshot(profile.headshotDataUrl || undefined),
+          },
+        });
+      }
+
+      setProperty({
+        address: "",
+        cityStateZip: "",
+        homeownerName: "",
+        beds: 3,
+        baths: 2,
+        sqft: 0,
+        yearBuilt: 0,
+        propertyType: "Single Family",
+      });
+      setCounts({
+        bedroom: 3,
+        bathroom: 2,
+        kitchen: 1,
+        living: 1,
+        dining: 1,
+        exterior: 2,
+        landscaping: 1,
+      });
+      setSpaces([]);
+      setPhotos([]);
+      setCoverFrontPhoto(null);
+      setCoverUploadError("");
+      setAnalyses([]);
+      setRecommendations([]);
+      setActiveSpaceId(undefined);
+      setAnalyzingSpaceId(undefined);
+      setAnalysisError("");
+      setDraftMessage(hasCompletedAnalysis
+        ? "Previous listing saved under Listing AI Reports. Ready for a new property."
+        : "Ready for a new property. Your existing reports and profile are unchanged.");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch {
+      setReportError("The previous listing could not be saved. Nothing was cleared. Please try again.");
+    } finally {
+      setGeneratingReport(false);
+    }
   }
 
   function generateSpaces() {
@@ -657,11 +697,11 @@ export default function ListingEvaluationV2Client() {
         <div className="flex justify-end">
           <button
             type="button"
-            onClick={startNewProperty}
+            onClick={() => void startNewProperty()}
             disabled={!draftHydrated || Boolean(analyzingSpaceId) || generatingReport}
             className="rounded-xl border border-[#0B1F3A] bg-[#FFFDF8] px-5 py-3 text-sm font-semibold text-[#0B1F3A] transition hover:bg-[#EFE7DB] disabled:cursor-not-allowed disabled:opacity-50"
           >
-            + New Property
+            Create New Listing
           </button>
         </div>
 
