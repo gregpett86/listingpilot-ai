@@ -364,6 +364,42 @@ export default function ListingEvaluationV2Client() {
     event.target.value = "";
   }
 
+  function startNewProperty() {
+    if (!window.confirm("Start a new property? Your current draft will be replaced. Previously generated reports will remain in Listing AI Reports.")) return;
+
+    setProperty({
+      address: "",
+      cityStateZip: "",
+      homeownerName: "",
+      beds: 3,
+      baths: 2,
+      sqft: 0,
+      yearBuilt: 0,
+      propertyType: "Single Family",
+    });
+    setCounts({
+      bedroom: 3,
+      bathroom: 2,
+      kitchen: 1,
+      living: 1,
+      dining: 1,
+      exterior: 2,
+      landscaping: 1,
+    });
+    setSpaces([]);
+    setPhotos([]);
+    setCoverFrontPhoto(null);
+    setCoverUploadError("");
+    setAnalyses([]);
+    setRecommendations([]);
+    setActiveSpaceId(undefined);
+    setAnalyzingSpaceId(undefined);
+    setAnalysisError("");
+    setReportError("");
+    setDraftMessage("New property started. Your saved reports and agent profile are unchanged.");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
   function generateSpaces() {
     const generated = buildPropertySpaces(counts);
     setSpaces(generated);
@@ -617,6 +653,17 @@ export default function ListingEvaluationV2Client() {
             seller preparation.
           </p>
         </header>
+
+        <div className="flex justify-end">
+          <button
+            type="button"
+            onClick={startNewProperty}
+            disabled={!draftHydrated || Boolean(analyzingSpaceId) || generatingReport}
+            className="rounded-xl border border-[#0B1F3A] bg-[#FFFDF8] px-5 py-3 text-sm font-semibold text-[#0B1F3A] transition hover:bg-[#EFE7DB] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            + New Property
+          </button>
+        </div>
 
         {spaces.length === 0 ? (
           <div className="space-y-6">
