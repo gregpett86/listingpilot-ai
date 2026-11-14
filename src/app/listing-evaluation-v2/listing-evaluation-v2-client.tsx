@@ -75,6 +75,35 @@ function readFile(file: File) {
   });
 }
 
+/** Resize camera photos to keep mobile drafts manageable before cloud sync is added. */
+async function prepareRoomPhoto(file: File): Promise<string> {
+  if (!file.type.startsWith("image/")) throw new Error("Choose an image file.");
+  if (file.size > 25 * 1024 * 1024) throw new Error("This photo is over 25 MB. Choose a smaller image.");
+  if (typeof createImageBitmap !== "function") {
+    if (["image/jpeg", "image/png", "image/webp"].includes(file.type)) return readFile(file);
+    throw new Error("This phone cannot process that photo format. Try a JPG or PNG.");
+  }
+  let bitmap: ImageBitmap;
+  try {
+    bitmap = await createImageBitmap(file);
+  } catch {
+    if (["image/jpeg", "image/png", "image/webp"].includes(file.type)) return readFile(file);
+    throw new Error("This photo format could not be opened. Try a JPG or PNG.");
+  }
+  try {
+    const scale = Math.min(1, 1800 / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Photo processing is unavailable on this phone.");
+    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL("image/jpeg", 0.86);
+  } finally {
+    bitmap.close();
+  }
+}
+
 /** Center-crop only the optional report cover photo, never room-analysis photos. */
 async function squareCoverPhoto(file: File): Promise<string> {
   const image = await createImageBitmap(file);
@@ -194,6 +223,8 @@ export default function ListingEvaluationV2Client() {
   const [activeSpaceId, setActiveSpaceId] = useState<string>();
   const [analyzingSpaceId, setAnalyzingSpaceId] = useState<string>();
   const [analysisError, setAnalysisError] = useState("");
+  const [photoUploadError, setPhotoUploadError] = useState("");
+  const [uploadingSpaceId, setUploadingSpaceId] = useState<string>();
   const [draftHydrated, setDraftHydrated] = useState(false);
   const [draftMessage, setDraftMessage] = useState("");
   const [generatingReport, setGeneratingReport] = useState(false);
@@ -324,6 +355,8 @@ export default function ListingEvaluationV2Client() {
   );
 
   const activeSpace = spaces.find((space) => space.id === activeSpaceId);
+  const activeSpaceIndex = spaces.findIndex((space) => space.id === activeSpaceId);
+  const nextSpace = activeSpaceIndex >= 0 ? spaces[activeSpaceIndex + 1] : undefined;
   const activePhotos = photos.filter(
     (photo) => photo.spaceId === activeSpaceId,
   );
@@ -447,6 +480,7 @@ export default function ListingEvaluationV2Client() {
     setAnalyses([]);
     setRecommendations([]);
     setActiveSpaceId(generated[0]?.id);
+    setPhotoUploadError("");
   }
 
   function renameSpace(id: string, customLabel: string) {
@@ -475,38 +509,40 @@ export default function ListingEvaluationV2Client() {
     );
   }
 
-  async function addPhotos(
-    event: ChangeEvent<HTMLInputElement>,
-    space: PropertySpace,
-  ) {
+  async function addPhotos(event: ChangeEvent<HTMLInputElement>, space: PropertySpace) {
     const files = Array.from(event.target.files ?? []);
-    if (!files.length) return;
-
-    const newPhotos = await Promise.all(
-      files.map(async (file, index): Promise<EvaluationPhoto> => ({
-        id: `${space.id}:photo:${Date.now()}:${index}`,
-        spaceId: space.id,
-        name: file.name,
-        dataUrl: await readFile(file),
-        createdAt: new Date().toISOString(),
-      })),
-    );
-
-    setPhotos((current) => [...current, ...newPhotos]);
-    setSpaces((current) =>
-      current.map((item) =>
-        item.id === space.id
-          ? {
-              ...item,
-              status: "in_progress",
-              noPhotosReason: undefined,
-              photoIds: [...item.photoIds, ...newPhotos.map((photo) => photo.id)],
-            }
-          : item,
-      ),
-    );
-    setAnalysisError("");
     event.target.value = "";
+    if (!files.length || uploadingSpaceId) return;
+    setPhotoUploadError("");
+    setUploadingSpaceId(space.id);
+    try {
+      const newPhotos: EvaluationPhoto[] = [];
+      // Process sequentially to reduce memory spikes on phones.
+      for (const [index, file] of files.entries()) {
+        newPhotos.push({
+          id: `${space.id}:photo:${Date.now()}:${index}`,
+          spaceId: space.id,
+          name: file.name || `Photo ${index + 1}`,
+          dataUrl: await prepareRoomPhoto(file),
+          createdAt: new Date().toISOString(),
+        });
+      }
+      setPhotos((current) => [...current, ...newPhotos]);
+      setSpaces((current) => current.map((item) =>
+        item.id === space.id
+          ? { ...item, status: "in_progress", noPhotosReason: undefined,
+              photoIds: [...item.photoIds, ...newPhotos.map((photo) => photo.id)] }
+          : item,
+      ));
+      // Prior analysis is stale when new photos are added.
+      setAnalyses((current) => current.filter((item) => item.spaceId !== space.id));
+      setRecommendations((current) => current.filter((item) => item.spaceId !== space.id));
+      setAnalysisError("");
+    } catch (error) {
+      setPhotoUploadError(error instanceof Error ? error.message : "The photo could not be added. Please try again.");
+    } finally {
+      setUploadingSpaceId(undefined);
+    }
   }
 
   async function analyzeSpace(space: PropertySpace) {
