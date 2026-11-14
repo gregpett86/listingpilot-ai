@@ -850,7 +850,7 @@ export default function ListingEvaluationV2Client() {
             </section>
 
             <div className="grid gap-6 lg:grid-cols-[340px_1fr]">
-              <aside className="rounded-2xl border border-[#D6CCBE] bg-[#FFFDF8] p-4 shadow-[0_14px_36px_rgba(11,31,58,0.08)]">
+              <aside className="order-2 rounded-2xl border border-[#D6CCBE] bg-[#FFFDF8] p-4 shadow-[0_14px_36px_rgba(11,31,58,0.08)] lg:order-1">
                 <div className="mb-4 flex items-center justify-between">
                   <div>
                     <h2 className="font-serif text-xl font-semibold text-[#0B1F3A]">Property sections</h2>
@@ -875,7 +875,7 @@ export default function ListingEvaluationV2Client() {
                           {group.spaces.map((space) => {
                             const score = dynamicAnalyses.find((analysis) => analysis.spaceId === space.id);
                             return (
-                              <button key={space.id} className={`w-full rounded-xl border px-3 py-3 text-left ${activeSpaceId === space.id ? "border-[#0B1F3A] bg-[#EFE7DB]" : "bg-white"}`} onClick={() => setActiveSpaceId(space.id)}>
+                              <button key={space.id} className={`w-full rounded-xl border px-3 py-3 text-left ${activeSpaceId === space.id ? "border-[#0B1F3A] bg-[#EFE7DB]" : "bg-white"}`} onClick={() => { setActiveSpaceId(space.id); setPhotoUploadError(""); }}>
                                 <div className="flex items-center justify-between gap-3">
                                   <span className="font-medium">{displaySpaceName(space)}</span>
                                   <span className="text-xs font-semibold text-[#6F6A63]">
@@ -892,7 +892,21 @@ export default function ListingEvaluationV2Client() {
                 </div>
               </aside>
 
-              <section className="rounded-2xl border border-[#D6CCBE] bg-[#FFFDF8] p-6 shadow-[0_14px_36px_rgba(11,31,58,0.08)]">
+              <section className="order-1 rounded-2xl border border-[#D6CCBE] bg-[#FFFDF8] p-4 shadow-[0_14px_36px_rgba(11,31,58,0.08)] sm:p-6 lg:order-2">
+                <label className="mb-5 block lg:hidden">
+                  <span className="mb-2 block text-sm font-semibold text-[#0B1F3A]">Choose a room to photograph</span>
+                  <select
+                    className="w-full rounded-xl border border-[#D6CCBE] bg-[#FFFDF8] px-4 py-3 text-base"
+                    value={activeSpaceId ?? ""}
+                    onChange={(event) => { setActiveSpaceId(event.target.value); setPhotoUploadError(""); }}
+                  >
+                    {spaces.map((space) => (
+                      <option key={space.id} value={space.id}>
+                        {displaySpaceName(space)} ({photos.filter((photo) => photo.spaceId === space.id).length} photos)
+                      </option>
+                    ))}
+                  </select>
+                </label>
                 {activeSpace ? (
                   <>
                     <p className="text-xs font-semibold uppercase tracking-wide text-[#6F6A63]">Evaluate this space</p>
@@ -909,10 +923,39 @@ export default function ListingEvaluationV2Client() {
                         <p className="mt-2 text-sm text-[#6F6A63]">
                           These photos are isolated to this space and routed to the correct specialist AI.
                         </p>
-                        <label className="mt-5 inline-block cursor-pointer rounded-xl bg-[#0B1F3A] px-5 py-3 font-semibold text-[#F4F0E8] shadow-sm hover:bg-[#08172C]">
-                          + Add photos
-                          <input className="hidden" type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={(event) => addPhotos(event, activeSpace)} />
-                        </label>
+                        <div className="mt-5 flex flex-wrap justify-center gap-3">
+                          <label className="inline-flex min-h-12 cursor-pointer items-center justify-center rounded-xl bg-[#0B1F3A] px-5 py-3 font-semibold text-[#F4F0E8] shadow-sm hover:bg-[#08172C]">
+                            Take Photo
+                            <input
+                              className="sr-only"
+                              type="file"
+                              accept="image/*"
+                              capture="environment"
+                              aria-label={`Take photo of ${displaySpaceName(activeSpace)}`}
+                              onChange={(event) => void addPhotos(event, activeSpace)}
+                            />
+                          </label>
+                          <label className="inline-flex min-h-12 cursor-pointer items-center justify-center rounded-xl border border-[#0B1F3A] bg-white px-5 py-3 font-semibold text-[#0B1F3A] hover:bg-[#EFE7DB]">
+                            Choose Existing Photos
+                            <input
+                              className="sr-only"
+                              type="file"
+                              accept="image/*"
+                              multiple
+                              aria-label={`Choose existing photos for ${displaySpaceName(activeSpace)}`}
+                              onChange={(event) => void addPhotos(event, activeSpace)}
+                            />
+                          </label>
+                        </div>
+                        <p className="mt-3 text-xs text-[#6F6A63]">
+                          Photos attach automatically to {displaySpaceName(activeSpace)}. Camera availability depends on your phone and browser.
+                        </p>
+                        {uploadingSpaceId === activeSpace.id && (
+                          <p className="mt-3 text-sm font-semibold text-[#0B1F3A]" role="status">Adding photos, please wait...</p>
+                        )}
+                        {photoUploadError && (
+                          <p className="mt-3 text-sm font-medium text-red-700" role="alert">{photoUploadError}</p>
+                        )}
                       </div>
 
                       {activePhotos.length > 0 ? (
@@ -926,8 +969,18 @@ export default function ListingEvaluationV2Client() {
                         </div>
                       ) : null}
 
+                      {nextSpace && (
+                        <button
+                          type="button"
+                          className="mt-5 w-full rounded-xl border border-[#B08A47] bg-[#F4F0E8] px-5 py-3 text-left text-sm font-semibold text-[#0B1F3A] hover:bg-[#EFE7DB]"
+                          onClick={() => { setActiveSpaceId(nextSpace.id); setPhotoUploadError(""); }}
+                        >
+                          Next room: {displaySpaceName(nextSpace)} →
+                        </button>
+                      )}
+
                       <div className="mt-5 flex flex-wrap justify-center gap-3">
-                        <button className="rounded-xl bg-[#0B1F3A] px-5 py-3 font-semibold text-[#F4F0E8] shadow-sm hover:bg-[#08172C] disabled:opacity-40" disabled={!activePhotos.length || analyzingSpaceId === activeSpace.id} onClick={() => analyzeSpace(activeSpace)}>
+                        <button className="rounded-xl bg-[#0B1F3A] px-5 py-3 font-semibold text-[#F4F0E8] shadow-sm hover:bg-[#08172C] disabled:opacity-40" disabled={!activePhotos.length || analyzingSpaceId === activeSpace.id || uploadingSpaceId === activeSpace.id} onClick={() => analyzeSpace(activeSpace)}>
                           {analyzingSpaceId === activeSpace.id ? "Analyzing..." : activeAnalysis ? "Re-analyze space" : "Analyze space"}
                         </button>
                         <button className="px-4 py-3 text-sm font-medium text-[#6F6A63] underline" onClick={() => markNoPhotos(activeSpace.id)}>
